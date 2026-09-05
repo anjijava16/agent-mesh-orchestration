@@ -1,0 +1,83 @@
+# Copy to .env and fill in at least one provider key.
+#   cp .env.example .env
+
+# ---------------------------------------------------------------- runtime
+ENVIRONMENT=local
+LOG_LEVEL=INFO
+LOG_FORMAT=console          # json in production
+
+# ------------------------------------------------------- provider api keys
+# You need the key for whichever provider you select, plus OPENAI_API_KEY if
+# you use the default embedding model (embeddings and chat are independent).
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GOOGLE_API_KEY=
+TAVILY_API_KEY=             # optional; enables the researcher's web_search tool
+
+# ----------------------------------------------------------- agent defaults
+# These are the fallback when a user has saved no settings of their own.
+AGENT_FRAMEWORK=langgraph   # langgraph | google_adk | deepagents | claude_agent_sdk
+AGENT_PROVIDER=anthropic    # anthropic | openai | google
+AGENT_MODEL=claude-sonnet-4-6
+AGENT_TEMPERATURE=0.2
+AGENT_MAX_TOKENS=4096
+AGENT_MAX_ORCHESTRATOR_STEPS=12
+AGENT_SHORT_TERM_WINDOW=20
+AGENT_LONG_TERM_TOP_K=5
+AGENT_ENABLE_LONG_TERM_MEMORY=true
+
+# ---------------------------------------------------------------- postgres
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=agentmesh
+POSTGRES_PASSWORD=agentmesh
+POSTGRES_DB=agentmesh
+POSTGRES_POOL_SIZE=20
+
+# -------------------------------------------------------------- opensearch
+OPENSEARCH_HOST=opensearch
+OPENSEARCH_PORT=9200
+OPENSEARCH_USER=admin
+OPENSEARCH_PASSWORD=Agentmesh#2026
+OPENSEARCH_USE_SSL=false
+OPENSEARCH_DOCUMENTS_INDEX=agentmesh-documents
+OPENSEARCH_MEMORY_INDEX=agentmesh-longterm-memory
+# Must match your embedding model's dimensionality. Changing it needs a reindex.
+OPENSEARCH_EMBEDDING_DIM=1536
+OPENSEARCH_BM25_TOP_K=50
+OPENSEARCH_KNN_TOP_K=50
+OPENSEARCH_RRF_K=60
+OPENSEARCH_FINAL_TOP_K=8
+
+# ------------------------------------------------------------------- redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# ----------------------------------------------------------------- storage
+STORAGE_BACKEND=minio       # minio | s3
+STORAGE_ENDPOINT_URL=http://minio:9000   # leave blank for real AWS S3
+STORAGE_REGION=us-east-1
+STORAGE_ACCESS_KEY=minioadmin
+STORAGE_SECRET_KEY=minioadmin
+STORAGE_BUCKET=agentmesh-uploads
+STORAGE_MAX_UPLOAD_BYTES=209715200
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+
+# --------------------------------------------------------------- ingestion
+INGESTION_CHUNK_SIZE=1200
+INGESTION_CHUNK_OVERLAP=180
+INGESTION_EMBEDDING_PROVIDER=openai
+INGESTION_EMBEDDING_MODEL=text-embedding-3-small
+INGESTION_EMBEDDING_BATCH_SIZE=64
+
+# -------------------------------------------------------------- resilience
+RESILIENCE_MAX_ATTEMPTS=4
+RESILIENCE_INITIAL_BACKOFF_SECONDS=0.5
+RESILIENCE_MAX_BACKOFF_SECONDS=8.0
+RESILIENCE_FAILURE_THRESHOLD=5
+RESILIENCE_SUCCESS_THRESHOLD=2
+RESILIENCE_BREAKER_RESET_TIMEOUT_SECONDS=30
+RESILIENCE_LLM_TIMEOUT_SECONDS=120
+RESILIENCE_TOOL_TIMEOUT_SECONDS=30
+RESILIENCE_SEARCH_TIMEOUT_SECONDS=15

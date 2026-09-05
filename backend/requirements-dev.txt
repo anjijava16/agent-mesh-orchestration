@@ -1,0 +1,8 @@
+-r requirements.txt
+pytest==8.4.1
+pytest-asyncio==1.1.0
+pytest-cov==6.2.1
+httpx==0.28.1
+ruff==0.12.8
+mypy==1.17.1
+types-boto3==1.40.20

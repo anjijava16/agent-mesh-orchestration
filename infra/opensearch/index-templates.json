@@ -1,0 +1,24 @@
+{
+  "_comment": "Applied automatically at API startup by app/search/indices.py. Kept here so the mapping is reviewable outside Python and can be pushed by an ops pipeline.",
+  "agentmesh-documents": {
+    "settings": {
+      "index": {
+        "knn": true,
+        "knn.algo_param.ef_search": 128,
+        "number_of_shards": 2,
+        "number_of_replicas": 1,
+        "refresh_interval": "5s"
+      }
+    },
+    "notes": [
+      "embedding is a knn_vector with the lucene HNSW engine and cosinesimil space",
+      "dimension must match INGESTION_EMBEDDING_MODEL (1536 for text-embedding-3-small)",
+      "changing the dimension requires a reindex, not a mapping update"
+    ]
+  },
+  "agentmesh-longterm-memory": {
+    "settings": {
+      "index": { "knn": true, "number_of_shards": 1, "number_of_replicas": 1 }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+# ---- web ----------------------------------------------------------------
+fastapi==0.124.1
+uvicorn[standard]==0.37.0
+python-multipart==0.0.20
+sse-starlette==2.1.3
+httpx==0.28.1
+
+# ---- config / validation ------------------------------------------------
+#pydantic==2.11.7
+pydantic >=2.12,<3
+pydantic-settings==2.10.1
+
+# ---- persistence --------------------------------------------------------
+sqlalchemy[asyncio]==2.0.43
+asyncpg==0.30.0
+psycopg[binary]==3.2.9
+alembic==1.16.4
+
+# ---- search / vector ----------------------------------------------------
+opensearch-py[async]==2.8.0   # the [async] extra pulls aiohttp, which AsyncOpenSearch needs
+
+# ---- queue / cache ------------------------------------------------------
+celery[redis]==5.5.3
+#redis==6.2.0
+redis==5.2.1
+flower==2.0.1
+
+# ---- object storage -----------------------------------------------------
+boto3==1.40.20
+
+# ---- agent frameworks ---------------------------------------------------
+langchain==1.0.3
+langchain-core==1.0.1
+langgraph==1.0.2
+langgraph-prebuilt==1.0.2
+langgraph-checkpoint>=2.1.0,<4
+langgraph-sdk>=0.2.2,<0.3
+langchain-openai==1.0.1
+langchain-anthropic==1.0.1
+langchain-google-genai==2.1.12
+deepagents==0.2.4
+google-adk==2.0.0
+litellm==1.77.3
+claude-agent-sdk==0.1.10
+anthropic==0.69.0
+openai==1.109.1
+
+# ---- document parsing ---------------------------------------------------
+pypdf==5.9.0
+python-docx==1.2.0
+openpyxl==3.1.5
+beautifulsoup4==4.13.4
+lxml==5.3.0
+
+# ---- observability ------------------------------------------------------
+structlog==25.4.0
+opentelemetry-api==1.41.1
+opentelemetry-sdk==1.41.1
+opentelemetry-instrumentation-fastapi==0.62b1
+prometheus-client==0.23.1

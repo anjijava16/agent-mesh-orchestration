@@ -1,0 +1,16 @@
+# Reference configuration for a non-local OpenSearch node.
+# The compose file runs single-node with the security plugin disabled; this is
+# what you would mount in anything shared.
+
+cluster.name: agentmesh
+network.host: 0.0.0.0
+
+plugins.security.disabled: false
+plugins.security.ssl.http.enabled: true
+
+# HNSW graphs are memory-resident. This caps how much of the JVM heap they may
+# take before the plugin starts evicting - tune it against your corpus size.
+knn.memory.circuit_breaker.limit: 50%
+knn.circuit_breaker.triggered: false
+
+indices.query.bool.max_clause_count: 4096

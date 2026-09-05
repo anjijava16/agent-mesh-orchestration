@@ -1,0 +1,143 @@
+"""Wrap the neutral tools into each framework's own tool type.
+
+Every wrapper adds the same three things the raw function does not have:
+a per-tool circuit breaker, a timeout, and a structured log line. That is why
+these go through `_guard` rather than being passed straight through.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from collections.abc import Callable
+from typing import Any
+
+from app.agents.tools.core import TOOL_REGISTRY, TOOL_SCHEMAS
+from app.config import settings
+from app.core.errors import CircuitOpenError
+from app.core.logging import get_logger
+from app.core.resilience import tool_breaker
+
+log = get_logger(__name__)
+
+
+def _guard(name: str, fn: Callable[..., Any]) -> Callable[..., Any]:
+    breaker = tool_breaker(name)
+
+    async def wrapped(**kwargs: Any) -> str:
+        started = time.perf_counter()
+        try:
+            async def call() -> Any:
+                return await asyncio.wait_for(fn(**kwargs), timeout=settings.resilience.tool_timeout_seconds)
+
+            result = await breaker.call(call)
+            log.info("tool_ok", tool=name, ms=int((time.perf_counter() - started) * 1000))
+            return result if isinstance(result, str) else json.dumps(result)
+        except CircuitOpenError as exc:
+            log.warning("tool_circuit_open", tool=name)
+            return json.dumps({"error": str(exc), "recoverable": True})
+        except TimeoutError:
+            log.warning("tool_timeout", tool=name)
+            return json.dumps({"error": f"Tool '{name}' timed out.", "recoverable": True})
+        except Exception as exc:
+            log.warning("tool_failed", tool=name, error=str(exc)[:300])
+            return json.dumps({"error": f"{type(exc).__name__}: {exc}"[:400], "recoverable": False})
+
+    wrapped.__name__ = name
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
+# ---------------------------------------------------------------- LangChain
+def langchain_tools(names: list[str]) -> list[Any]:
+    """StructuredTool objects for LangGraph and DeepAgents."""
+    from langchain_core.tools import StructuredTool
+
+    out = []
+    for name in names:
+        fn = TOOL_REGISTRY.get(name)
+        if fn is None:
+            continue
+        guarded = _guard(name, fn)
+
+        # StructuredTool infers the schema from the *original* signature, so we
+        # hand it the raw coroutine for typing and the guarded one for execution.
+        async def _runner(_g=guarded, **kwargs: Any) -> str:
+            return await _g(**kwargs)
+
+        out.append(
+            StructuredTool.from_function(
+                coroutine=_runner,
+                func=None,
+                name=name,
+                description=(fn.__doc__ or name).strip(),
+                infer_schema=False,
+                args_schema=_pydantic_schema(name),
+            )
+        )
+    return out
+
+
+def _pydantic_schema(name: str) -> Any:
+    from pydantic import create_model
+
+    fields: dict[str, Any] = {}
+    for field_name, field_type in TOOL_SCHEMAS.get(name, {}).items():
+        default = ... if field_name in ("query", "expression", "text", "document_id", "numbers") else None
+        fields[field_name] = (field_type | None, default) if default is None else (field_type, default)
+    return create_model(f"{name.title().replace('_', '')}Args", **fields)  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------- Google ADK
+def adk_tools(names: list[str]) -> list[Any]:
+    """ADK FunctionTools. ADK reads the signature and docstring, so we rebuild a
+    typed async shim per tool rather than passing **kwargs."""
+    import functools
+
+    from google.adk.tools import FunctionTool
+
+    out = []
+    for name in names:
+        fn = TOOL_REGISTRY.get(name)
+        if fn is None:
+            continue
+        guarded = _guard(name, fn)
+
+        @functools.wraps(fn)
+        async def shim(*args: Any, _g=guarded, _f=fn, **kwargs: Any) -> str:
+            import inspect
+
+            bound = inspect.signature(_f).bind_partial(*args, **kwargs)
+            bound.apply_defaults()
+            return await _g(**bound.arguments)
+
+        out.append(FunctionTool(func=shim))
+    return out
+
+
+# --------------------------------------------------- Claude Agent SDK (MCP)
+def claude_sdk_server(names: list[str], server_name: str = "agentmesh") -> Any:
+    """An in-process MCP server exposing our tools to the Claude Agent SDK.
+
+    In-process means no subprocess and no IPC - the tool call lands directly in
+    this event loop, which is what we want inside a FastAPI worker.
+    """
+    from claude_agent_sdk import create_sdk_mcp_server
+    from claude_agent_sdk import tool as sdk_tool
+
+    handlers = []
+    for name in names:
+        fn = TOOL_REGISTRY.get(name)
+        if fn is None:
+            continue
+        guarded = _guard(name, fn)
+        schema = dict(TOOL_SCHEMAS.get(name, {}))
+
+        @sdk_tool(name, (fn.__doc__ or name).strip()[:400], schema)
+        async def handler(args: dict[str, Any], _g=guarded) -> dict[str, Any]:
+            text = await _g(**args)
+            return {"content": [{"type": "text", "text": text}]}
+
+        handlers.append(handler)
+
+    return create_sdk_mcp_server(name=server_name, version="1.0.0", tools=handlers)

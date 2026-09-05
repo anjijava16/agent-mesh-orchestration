@@ -1,0 +1,20 @@
+[tool.ruff]
+line-length = 118
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["B008", "N818", "RUF012", "UP042", "UP047", "RUF005", "SIM102"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+# UP042: `class Foo(str, Enum)` is deliberate. StrEnum is 3.11+, and the plain
+#        str mixin serialises identically while staying importable by tooling
+#        that has not caught up.
+# UP047: PEP 695 generics are fine, but the decorator signatures here read more
+#        clearly with an explicit TypeVar.
+# RUF005: unpacking is not always clearer than concatenation in list building.

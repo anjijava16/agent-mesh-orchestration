@@ -92,9 +92,14 @@ def _pydantic_schema(name: str) -> Any:
 def adk_tools(names: list[str]) -> list[Any]:
     """ADK FunctionTools. ADK reads the signature and docstring, so we rebuild a
     typed async shim per tool rather than passing **kwargs."""
-    import functools
+    import inspect
 
     from google.adk.tools import FunctionTool
+
+    # ADK 2.0 bug: internal modules use `from __future__ import annotations`
+    # but get_type_hints() cannot resolve ToolContext in all contexts.
+    # Patch it into the modules that need it.
+    _patch_adk_toolcontext()
 
     out = []
     for name in names:
@@ -102,17 +107,77 @@ def adk_tools(names: list[str]) -> list[Any]:
         if fn is None:
             continue
         guarded = _guard(name, fn)
+        schema = TOOL_SCHEMAS.get(name, {})
 
-        @functools.wraps(fn)
-        async def shim(*args: Any, _g=guarded, _f=fn, **kwargs: Any) -> str:
-            import inspect
-
-            bound = inspect.signature(_f).bind_partial(*args, **kwargs)
-            bound.apply_defaults()
-            return await _g(**bound.arguments)
-
+        shim = _build_adk_shim(name, fn, guarded, schema)
         out.append(FunctionTool(func=shim))
     return out
+
+
+_adk_patched = False
+
+
+def _patch_adk_toolcontext() -> None:
+    """Inject ToolContext into ADK modules that fail get_type_hints()."""
+    global _adk_patched
+    if _adk_patched:
+        return
+    _adk_patched = True
+    try:
+        from google.adk.tools.tool_context import ToolContext
+        import google.adk.tools.function_tool as ft_mod
+        import google.adk.tools._function_tool_declarations as decl_mod
+        import google.adk.tools._automatic_function_calling_util as afc_mod
+
+        for mod in (ft_mod, decl_mod, afc_mod):
+            if "ToolContext" not in vars(mod):
+                setattr(mod, "ToolContext", ToolContext)
+    except Exception:
+        pass  # If ADK changes its internals, don't crash
+
+
+def _build_adk_shim(
+    name: str,
+    original_fn: Any,
+    guarded_fn: Any,
+    schema: dict[str, Any],
+) -> Any:
+    """Create a typed async function that ADK can introspect safely.
+
+    We generate code with an explicit signature so get_type_hints() never
+    needs to resolve forward references from another module.
+    """
+    import inspect
+    import textwrap
+
+    sig = inspect.signature(original_fn)
+    params = []
+    for pname, param in sig.parameters.items():
+        annotation = schema.get(pname)
+        type_str = {str: "str", int: "int", float: "float", bool: "bool"}.get(annotation, "str")
+        if param.default is not inspect.Parameter.empty:
+            params.append(f"{pname}: {type_str} = {param.default!r}")
+        else:
+            params.append(f"{pname}: {type_str}")
+
+    params_str = ", ".join(params)
+    bind_args = ", ".join(f"{p}={p}" for p in schema)
+
+    code = textwrap.dedent(f'''
+async def {name}({params_str}) -> str:
+    """tool"""
+    import inspect as _ins
+    _bound = _ins.signature(_orig).bind_partial({bind_args})
+    _bound.apply_defaults()
+    return await _guarded(**_bound.arguments)
+''')
+
+    ns: dict[str, Any] = {"_orig": original_fn, "_guarded": guarded_fn}
+    exec(code, ns)  # noqa: S102
+    func = ns[name]
+    # Set the real docstring after exec to avoid quoting issues.
+    func.__doc__ = (original_fn.__doc__ or name).strip()
+    return func
 
 
 # --------------------------------------------------- Claude Agent SDK (MCP)

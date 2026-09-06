@@ -49,6 +49,20 @@ claude-agent-sdk==0.2.107
 anthropic==0.69.0
 openai==1.109.1
 
+
+# Micrsoft agentic framework
+
+agent-framework-core==1.15.0
+agent-framework-orchestrations==1.1.1
+
+
+# AWS pip install strands-agents
+strands-agents==1.11.0
+strands-agents-tools==0.2.10
+
+# OpenAI Agent sdk
+openai-agents
+
 # ---- document parsing ---------------------------------------------------
 pypdf==5.9.0
 python-docx==1.2.0

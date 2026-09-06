@@ -361,6 +361,11 @@ def _exit_review_tool() -> Any:
     tool that does it - the instruction alone cannot break the loop."""
     from google.adk.tools import FunctionTool, ToolContext
 
+    # `from __future__ import annotations` stores the annotation below as the
+    # string "ToolContext". ADK resolves it via get_type_hints() against this
+    # function's module globals, so ToolContext must live there.
+    globals()["ToolContext"] = ToolContext
+
     def exit_review(tool_context: ToolContext) -> dict[str, str]:
         """Approve the draft and end the review cycle. Call only when the draft
         needs no further changes."""

@@ -15,12 +15,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AgentFramework(str, Enum):
-    """The four interchangeable multi-agent runtimes."""
+    """The seven interchangeable multi-agent runtimes."""
 
     GOOGLE_ADK = "google_adk"
+    GOOGLE_ADK_WORKFLOW = "google_adk_workflow"
     LANGGRAPH = "langgraph"
     DEEPAGENTS = "deepagents"
     CLAUDE_AGENT_SDK = "claude_agent_sdk"
+    MS_AGENT_FRAMEWORK = "ms_agent_framework"
+    STRANDS_AGENTS = "strands_agents"
 
 
 class ModelProvider(str, Enum):

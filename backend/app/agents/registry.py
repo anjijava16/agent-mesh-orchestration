@@ -10,17 +10,23 @@ from typing import Any
 
 from app.agents.base import AgentRuntime
 from app.agents.frameworks.adk_runtime import GoogleADKRuntime
+from app.agents.frameworks.adk_workflow_runtime import GoogleADKWorkflowRuntime
 from app.agents.frameworks.claude_sdk_runtime import ClaudeAgentSDKRuntime
 from app.agents.frameworks.deepagents_runtime import DeepAgentsRuntime
 from app.agents.frameworks.langgraph_runtime import LangGraphRuntime
+from app.agents.frameworks.ms_agent_runtime import MSAgentFrameworkRuntime
+from app.agents.frameworks.strands_runtime import StrandsAgentsRuntime
 from app.config import AgentFramework, settings
 from app.core.errors import ValidationError
 
 _RUNTIME_CLASSES: dict[AgentFramework, type[AgentRuntime]] = {
     AgentFramework.GOOGLE_ADK: GoogleADKRuntime,
+    AgentFramework.GOOGLE_ADK_WORKFLOW: GoogleADKWorkflowRuntime,
     AgentFramework.LANGGRAPH: LangGraphRuntime,
     AgentFramework.DEEPAGENTS: DeepAgentsRuntime,
     AgentFramework.CLAUDE_AGENT_SDK: ClaudeAgentSDKRuntime,
+    AgentFramework.MS_AGENT_FRAMEWORK: MSAgentFrameworkRuntime,
+    AgentFramework.STRANDS_AGENTS: StrandsAgentsRuntime,
 }
 
 _cache: dict[AgentFramework, AgentRuntime] = {}
@@ -64,9 +70,12 @@ def _probe(framework: AgentFramework) -> tuple[bool, str]:
 
     module = {
         AgentFramework.GOOGLE_ADK: "google.adk",
+        AgentFramework.GOOGLE_ADK_WORKFLOW: "google.adk",
         AgentFramework.LANGGRAPH: "langgraph",
         AgentFramework.DEEPAGENTS: "deepagents",
         AgentFramework.CLAUDE_AGENT_SDK: "claude_agent_sdk",
+        AgentFramework.MS_AGENT_FRAMEWORK: "agent_framework",
+        AgentFramework.STRANDS_AGENTS: "strands",
     }[framework]
     try:
         found = importlib.util.find_spec(module) is not None

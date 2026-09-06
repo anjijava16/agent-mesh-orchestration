@@ -239,16 +239,15 @@ services:
       - "4317:4317"    # OTLP gRPC collector
       - "4318:4318"    # OTLP HTTP collector
     environment:
-      PHOENIX_WORKING_DIR: /data
-      PHOENIX_SQL_DATABASE_URL: sqlite:///data/phoenix.db
+      PHOENIX_WORKING_DIR: /phoenix/data
     volumes:
-      - phoenixdata:/data
+      - ./infra/phoenix/data:/phoenix/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6006/healthz || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6006/healthz')"]
       interval: 15s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 15
+      start_period: 40s
     restart: unless-stopped
 
   # ---- Graph Database: Neo4j -----------------------------------------------
@@ -282,6 +281,5 @@ volumes:
   redisdata:
   osdata:
   miniodata:
-  phoenixdata:
   neo4jdata:
   neo4jlogs:

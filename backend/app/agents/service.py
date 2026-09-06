@@ -138,6 +138,19 @@ class ChatService:
         )
 
         runtime = get_runtime(config["framework"])
+        log.debug("run_start",
+                  framework=config["framework"],
+                  provider=config["provider"],
+                  model=config["model"],
+                  temperature=config["temperature"],
+                  max_tokens=config["max_tokens"],
+                  enabled_agents=config["enabled_agents"],
+                  conversation_id=str(conv_id),
+                  run_id=str(run_id),
+                  message_length=len(message),
+                  history_turns=len(window) - 1 if window else 0,
+                  memories_recalled=len(memories),
+                  document_ids=document_ids or [])
         started = time.perf_counter()
         collected: list[str] = []
         citations: list[dict[str, Any]] = []
@@ -162,6 +175,12 @@ class ChatService:
             async for event in runtime.stream(ctx):
                 if event.type is EventType.RUN_STARTED:
                     continue  # we already emitted a richer one
+                # DEBUG: log every event from the runtime
+                log.debug("runtime_event",
+                          event_type=event.type.value,
+                          agent=event.agent,
+                          run_id=str(run_id),
+                          data_keys=list(event.data.keys()) if event.data else [])
                 if event.type is EventType.TOKEN:
                     collected.append(event.data.get("text", ""))
                 elif event.type is EventType.CITATION:
@@ -186,6 +205,16 @@ class ChatService:
         answer = "".join(collected).strip()
         duration_ms = int((time.perf_counter() - started) * 1000)
         total_tokens = sum(v for k, v in usage.items() if k.endswith("tokens"))
+
+        log.debug("run_complete",
+                  framework=config["framework"],
+                  run_id=str(run_id),
+                  duration_ms=duration_ms,
+                  total_tokens=total_tokens,
+                  answer_length=len(answer),
+                  citations_count=len(citations),
+                  steps_count=len(steps_buffer),
+                  error=error)
 
         # Persist in a fresh session: the request session may have been rolled
         # back by whatever failed above.

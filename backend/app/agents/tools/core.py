@@ -198,14 +198,11 @@ async def policy_lookup_tool(topic: str = "") -> str:
 
 @with_resilience(breaker=tool_breaker("web_search"), timeout=settings.resilience.tool_timeout_seconds,
                  label="tool.web_search")
-async def _web_search(query: str, max_results: int) -> list[dict[str, Any]]:
-    # Tavily is the reference implementation; swap the body for whichever
-    # provider your org has a contract with.
-    import os
-
+async def _tavily_search(query: str, max_results: int) -> list[dict[str, Any]]:
+    """Tavily web search — requires TAVILY_API_KEY."""
     import httpx
 
-    api_key = os.getenv("TAVILY_API_KEY")
+    api_key = settings.tavily_api_key
     if not api_key:
         raise RuntimeError("TAVILY_API_KEY not configured")
     async with httpx.AsyncClient(timeout=20) as client:
@@ -221,11 +218,57 @@ async def _web_search(query: str, max_results: int) -> list[dict[str, Any]]:
     ]
 
 
+async def _duckduckgo_search(query: str, max_results: int) -> list[dict[str, Any]]:
+    """DuckDuckGo web search — free, no API key required."""
+    import asyncio
+
+    from duckduckgo_search import DDGS
+
+    def _sync_search() -> list[dict[str, Any]]:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+        return [
+            {"title": r.get("title", ""), "url": r.get("href", ""), "content": (r.get("body") or "")[:1500]}
+            for r in results
+        ]
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_search)
+
+
+async def _web_search_dispatch(query: str, max_results: int) -> list[dict[str, Any]]:
+    """Route to the configured search provider."""
+    from app.config import SearchProvider
+
+    provider = settings.search_provider
+    log.debug("web_search_dispatch", provider=provider.value, query=query[:200],
+              max_results=max_results, tavily_key_set=bool(settings.tavily_api_key))
+
+    if provider is SearchProvider.TAVILY:
+        return await _tavily_search(query, max_results)
+
+    if provider is SearchProvider.DUCKDUCKGO:
+        return await _duckduckgo_search(query, max_results)
+
+    # AUTO: try Tavily first, fall back to DuckDuckGo.
+    if settings.tavily_api_key:
+        try:
+            results = await _tavily_search(query, max_results)
+            log.debug("web_search_provider_used", provider="tavily", results_count=len(results))
+            return results
+        except Exception as exc:
+            log.warning("tavily_failed_falling_back_to_duckduckgo", error=str(exc)[:200])
+
+    results = await _duckduckgo_search(query, max_results)
+    log.debug("web_search_provider_used", provider="duckduckgo", results_count=len(results))
+    return results
+
+
 async def web_search_tool(query: str, max_results: int = 5) -> str:
     """Search the public web for current information. Use for anything that changes
     over time or is not in the user's documents."""
     try:
-        results = await _web_search(query, max(1, min(max_results, 10)))
+        results = await _web_search_dispatch(query, max(1, min(max_results, 10)))
         return json.dumps({"results": results})
     except Exception as exc:
         log.warning("web_search_unavailable", error=str(exc)[:200])

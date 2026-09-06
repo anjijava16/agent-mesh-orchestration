@@ -18,6 +18,7 @@ alembic==1.16.4
 
 # ---- search / vector ----------------------------------------------------
 opensearch-py[async]==2.8.0   # the [async] extra pulls aiohttp, which AsyncOpenSearch needs
+duckduckgo-search==8.0.1      # free web search, no API key required
 
 # ---- queue / cache ------------------------------------------------------
 celery[redis]==5.5.3
@@ -75,4 +76,9 @@ structlog==25.4.0
 opentelemetry-api==1.41.1
 opentelemetry-sdk==1.41.1
 opentelemetry-instrumentation-fastapi==0.62b1
+opentelemetry-exporter-otlp==1.41.1
+arize-phoenix-otel==0.9.1
 prometheus-client==0.23.1
+
+# ---- graph database -----------------------------------------------------
+neo4j==5.28.1

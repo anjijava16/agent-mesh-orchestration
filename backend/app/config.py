@@ -32,6 +32,14 @@ class ModelProvider(str, Enum):
     GOOGLE = "google"
 
 
+class SearchProvider(str, Enum):
+    """Web search backend for the web_search tool."""
+
+    TAVILY = "tavily"
+    DUCKDUCKGO = "duckduckgo"
+    AUTO = "auto"  # Try Tavily first, fall back to DuckDuckGo
+
+
 # Model catalogue. The UI reads this over /api/v1/settings/models so operators
 # can add a model here and have it appear in the picker without a frontend build.
 MODEL_CATALOGUE: dict[ModelProvider, list[dict[str, Any]]] = {
@@ -221,9 +229,30 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     google_api_key: str | None = None
 
+    # Web search
+    search_provider: SearchProvider = SearchProvider.AUTO
+    tavily_api_key: str | None = None
+
     # Optional tracing
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str | None = None
+
+    # Arize Phoenix (AI Observability & Evaluation)
+    phoenix_enabled: bool = False
+    phoenix_host: str = "phoenix"
+    phoenix_grpc_port: int = 4317
+
+    # Neo4j (Graph Database)
+    neo4j_uri: str = "bolt://neo4j:7687"
+    neo4j_auth: str = "neo4j/agentmesh2026"
+
+    @property
+    def neo4j_user(self) -> str:
+        return self.neo4j_auth.split("/", 1)[0] if "/" in self.neo4j_auth else "neo4j"
+
+    @property
+    def neo4j_password(self) -> str:
+        return self.neo4j_auth.split("/", 1)[1] if "/" in self.neo4j_auth else self.neo4j_auth
 
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)

@@ -18,6 +18,9 @@ from app.agents.frameworks.ms_agent_runtime import MSAgentFrameworkRuntime
 from app.agents.frameworks.strands_runtime import StrandsAgentsRuntime
 from app.config import AgentFramework, settings
 from app.core.errors import ValidationError
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
 
 _RUNTIME_CLASSES: dict[AgentFramework, type[AgentRuntime]] = {
     AgentFramework.GOOGLE_ADK: GoogleADKRuntime,
@@ -43,9 +46,16 @@ def get_runtime(framework: AgentFramework | str | None = None) -> AgentRuntime:
                 f"Unknown framework '{framework}'",
                 details={"supported": [f.value for f in AgentFramework]},
             ) from exc
-    if framework not in _cache:
-        _cache[framework] = _RUNTIME_CLASSES[framework]()
-    return _cache[framework]
+    cached = framework in _cache
+    if not cached:
+        cls = _RUNTIME_CLASSES[framework]
+        log.debug("runtime_instantiate", framework=framework.value,
+                  runtime_class=cls.__name__)
+        _cache[framework] = cls()
+    rt = _cache[framework]
+    log.debug("runtime_selected", framework=framework.value,
+              display_name=rt.display_name, cached=cached)
+    return rt
 
 
 def available_frameworks() -> list[dict[str, Any]]:

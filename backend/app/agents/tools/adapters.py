@@ -25,22 +25,31 @@ def _guard(name: str, fn: Callable[..., Any]) -> Callable[..., Any]:
     breaker = tool_breaker(name)
 
     async def wrapped(**kwargs: Any) -> str:
+        log.debug("tool_invoke", tool=name, input_keys=list(kwargs.keys()),
+                  input_preview={k: str(v)[:200] for k, v in kwargs.items()})
         started = time.perf_counter()
         try:
             async def call() -> Any:
                 return await asyncio.wait_for(fn(**kwargs), timeout=settings.resilience.tool_timeout_seconds)
 
             result = await breaker.call(call)
-            log.info("tool_ok", tool=name, ms=int((time.perf_counter() - started) * 1000))
-            return result if isinstance(result, str) else json.dumps(result)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            result_str = result if isinstance(result, str) else json.dumps(result)
+            log.info("tool_ok", tool=name, ms=elapsed_ms)
+            log.debug("tool_result", tool=name, ms=elapsed_ms,
+                      output_length=len(result_str),
+                      output_preview=result_str[:500])
+            return result_str
         except CircuitOpenError as exc:
             log.warning("tool_circuit_open", tool=name)
             return json.dumps({"error": str(exc), "recoverable": True})
         except TimeoutError:
-            log.warning("tool_timeout", tool=name)
+            log.warning("tool_timeout", tool=name,
+                        ms=int((time.perf_counter() - started) * 1000))
             return json.dumps({"error": f"Tool '{name}' timed out.", "recoverable": True})
         except Exception as exc:
-            log.warning("tool_failed", tool=name, error=str(exc)[:300])
+            log.warning("tool_failed", tool=name, error=str(exc)[:300],
+                        ms=int((time.perf_counter() - started) * 1000))
             return json.dumps({"error": f"{type(exc).__name__}: {exc}"[:400], "recoverable": False})
 
     wrapped.__name__ = name

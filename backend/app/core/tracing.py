@@ -75,6 +75,10 @@ def setup_tracing() -> None:
     except Exception as exc:
         log.warning("tracing_init_failed", error=str(exc)[:300])
 
+    # Opik tracing (separate from OTEL — Opik has its own SDK)
+    if settings.opik_enabled:
+        _setup_opik()
+
 
 def _instrument(name: str, fn: callable) -> None:
     """Run an instrumentor function, logging success or skip."""
@@ -185,3 +189,81 @@ def _instrument_bedrock() -> None:
     """
     from openinference.instrumentation.bedrock import BedrockInstrumentor
     BedrockInstrumentor().instrument()
+
+
+# ===================================================================
+# Opik (Comet AI Observability)
+# ===================================================================
+
+def _setup_opik() -> None:
+    """Configure the Opik Python SDK to send traces to self-hosted Opik.
+
+    Opik has its own tracing SDK that instruments LangChain, OpenAI, and
+    LiteLLM natively.  This runs alongside the OTEL/Phoenix instrumentation
+    so traces go to both platforms.
+    """
+    try:
+        import os
+        import opik
+
+        opik_url = settings.opik_url or "http://opik-backend:8080"
+
+        # Set env vars before configure — Opik reads these.
+        os.environ["OPIK_URL_OVERRIDE"] = opik_url
+        os.environ["OPIK_PROJECT_NAME"] = settings.app_name
+        os.environ["OPIK_WORKSPACE"] = "default"
+
+        # Configure with explicit URL — don't rely on use_local detection.
+        opik.configure(
+            url=opik_url,
+            use_local=True,
+        )
+
+        # Instrument OpenAI SDK
+        _instrument("opik_openai", _opik_instrument_openai)
+        # Instrument LiteLLM
+        _instrument("opik_litellm", _opik_instrument_litellm)
+        # Instrument LangChain/LangGraph
+        _instrument("opik_langchain", _opik_instrument_langchain)
+
+        log.info("opik_tracing_ready", url=opik_url,
+                 project=settings.app_name)
+    except Exception as exc:
+        log.warning("opik_init_failed", error=str(exc)[:300])
+
+
+def _opik_instrument_openai() -> None:
+    """Verify Opik OpenAI integration is available.
+
+    Opik's track_openai wraps individual client instances, not the module.
+    The actual wrapping happens in each runtime when it creates an OpenAI
+    client.  Here we just confirm the import works.
+    """
+    from opik.integrations.openai import track_openai  # noqa: F401
+
+
+def _opik_instrument_litellm() -> None:
+    """Enable Opik callback for LiteLLM globally.
+
+    track_litellm() registers a LiteLLM callback that sends every
+    completion call to Opik — this covers all runtimes that use LiteLLM
+    (ADK, Strands, MS Agent Framework).
+    """
+    from opik.integrations.litellm import track_litellm
+    track_litellm(project_name=settings.app_name)
+
+
+def _opik_instrument_langchain() -> None:
+    """Register Opik as a global LangChain callback.
+
+    The OpikTracer callback captures all LangChain/LangGraph chain runs,
+    agent steps, and tool calls and sends them to Opik.
+    """
+    from opik.integrations.langchain import OpikTracer
+    import langchain_core.callbacks.manager as cb_manager
+
+    opik_tracer = OpikTracer(project_name=settings.app_name)
+    # Add to the global callback list so every chain.invoke() is traced.
+    if not any(isinstance(cb, OpikTracer)
+               for cb in cb_manager.get_callback_manager().handlers):
+        cb_manager.get_callback_manager().add_handler(opik_tracer)

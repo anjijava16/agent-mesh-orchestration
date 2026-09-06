@@ -216,6 +216,21 @@ class ChatService:
                   steps_count=len(steps_buffer),
                   error=error)
 
+        # Send trace to Opik (if enabled).
+        _log_to_opik(
+            run_id=str(run_id),
+            conversation_id=str(conv_id),
+            user_message=message,
+            answer=answer,
+            framework=config["framework"],
+            provider=config["provider"],
+            model=config["model"],
+            steps=steps_buffer,
+            usage=usage,
+            duration_ms=duration_ms,
+            error=error,
+        )
+
         # Persist in a fresh session: the request session may have been rolled
         # back by whatever failed above.
         await self._persist_result(
@@ -359,3 +374,83 @@ class ChatService:
                 )
         except Exception as exc:
             log.warning("post_turn_failed", error=str(exc)[:300], conversation_id=str(conversation_id))
+
+
+def _log_to_opik(
+    *,
+    run_id: str,
+    conversation_id: str,
+    user_message: str,
+    answer: str,
+    framework: str,
+    provider: str,
+    model: str,
+    steps: list[dict[str, Any]],
+    usage: dict[str, int],
+    duration_ms: int,
+    error: str | None,
+) -> None:
+    """Log a complete agent run to Opik as a trace with child spans.
+
+    This is called after every conversation turn regardless of which runtime
+    ran, so all frameworks get traced in Opik.  Runs in a fire-and-forget
+    manner — Opik failures never block the response.
+    """
+    if not settings.opik_enabled:
+        return
+    try:
+        import opik
+
+        client = opik.Opik(project_name=settings.app_name)
+
+        # Create the parent trace for the entire run.
+        trace = client.trace(
+            name=f"{framework}/{model}",
+            input={"message": user_message},
+            output={"answer": answer[:2000]} if answer else {"error": error},
+            metadata={
+                "framework": framework,
+                "provider": provider,
+                "model": model,
+                "conversation_id": conversation_id,
+                "run_id": run_id,
+                "duration_ms": duration_ms,
+                "total_tokens": sum(v for k, v in usage.items() if k.endswith("tokens")),
+            },
+            tags=[framework, provider],
+        )
+
+        # Log each step (tool call, agent action, handoff) as a child span.
+        for i, step in enumerate(steps):
+            step_type = step.get("type", "step")
+            agent_name = step.get("agent", "unknown")
+            tool_name = step.get("tool", "")
+
+            span_name = (
+                f"{agent_name}/{tool_name}" if tool_name
+                else f"{agent_name}/{step_type}"
+            )
+
+            trace.span(
+                name=span_name,
+                type=step_type,
+                input={
+                    k: str(v)[:1000] for k, v in step.items()
+                    if k in ("input", "plan", "to", "tool")
+                },
+                output={
+                    k: str(v)[:1000] for k, v in step.items()
+                    if k in ("output", "summary")
+                },
+                metadata={
+                    "agent": agent_name,
+                    "step_index": i,
+                    "duration_ms": step.get("duration_ms", 0),
+                },
+            )
+
+        # Flush to ensure the trace is sent.
+        client.flush()
+
+    except Exception as exc:
+        log.debug("opik_log_failed", error=str(exc)[:200])

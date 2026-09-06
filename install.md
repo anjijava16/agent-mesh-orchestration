@@ -201,6 +201,82 @@ docker compose exec postgres psql -U agentmesh -d agentmesh -c "\l"
 # http://localhost:6006
 ```
 
+### Opik (Comet AI Observability)
+
+Opik uses its own MySQL + ClickHouse stack.
+
+```bash
+# Check all Opik services status
+docker compose ps --filter "name=opik"
+
+# Opik backend health
+curl -s 'http://localhost:8083/health-check'
+
+# --- Opik REST API (via frontend proxy) ---
+
+# List projects
+curl -s 'http://localhost:5174/api/v1/private/projects' | python3 -m json.tool
+
+# List traces for a project
+curl -s 'http://localhost:5174/api/v1/private/traces?project_name=Default%20Project&size=10' | python3 -m json.tool
+
+# List spans
+curl -s 'http://localhost:5174/api/v1/private/spans?project_name=Default%20Project&size=10' | python3 -m json.tool
+
+# List datasets
+curl -s 'http://localhost:5174/api/v1/private/datasets' | python3 -m json.tool
+
+# List experiments
+curl -s 'http://localhost:5174/api/v1/private/experiments' | python3 -m json.tool
+
+# --- Opik OpenAPI Spec ---
+# Download the full API spec
+curl -s 'http://localhost:3003/openapi.yaml' > opik-openapi.yaml
+
+# --- Opik MySQL (state DB) ---
+docker compose exec opik-mysql mysql -u opik -popik opik
+
+# Once inside mysql:
+# SHOW TABLES;
+# SELECT count(*) FROM projects;
+# SELECT count(*) FROM traces;
+# exit;
+
+# One-liner from host
+docker compose exec opik-mysql mysql -u opik -popik opik -e "SHOW TABLES;"
+
+# --- Opik ClickHouse (analytics DB) ---
+docker compose exec opik-clickhouse clickhouse-client --user opik --password opik --database opik
+
+# Once inside clickhouse-client:
+# SHOW TABLES;
+# SELECT count() FROM traces;
+# SELECT count() FROM spans;
+# SELECT project_name, count() FROM traces GROUP BY project_name;
+# exit;
+
+# One-liner from host
+docker compose exec opik-clickhouse clickhouse-client --user opik --password opik --database opik -q "SHOW TABLES"
+
+# --- Opik logs ---
+docker compose logs opik-backend --tail 20
+docker compose logs opik-frontend --tail 10
+
+# --- Restart Opik stack ---
+docker compose restart opik-backend opik-frontend
+
+# --- Full Opik stack restart (including infra) ---
+docker compose stop opik-frontend opik-backend opik-clickhouse opik-zookeeper opik-mysql opik-redis opik-minio
+docker compose up -d opik-mysql opik-redis opik-zookeeper opik-clickhouse opik-minio
+# Wait 30s for infra, then:
+docker compose up -d opik-backend
+# Wait 60-120s for backend migrations, then:
+docker compose up -d opik-frontend
+
+# Or use the Opik Web UI
+# http://localhost:5174
+```
+
 ---
 
 ## Web UIs
@@ -208,8 +284,11 @@ docker compose exec postgres psql -U agentmesh -d agentmesh -c "\l"
 | Service              | URL                     | Credentials                |
 |----------------------|-------------------------|----------------------------|
 | AgentMesh App        | http://localhost:8080    | -                          |
-| AgentMesh API        | http://localhost:8000    | -                          |
+| AgentMesh API Docs   | http://localhost:8000/docs | -                        |
 | Arize Phoenix        | http://localhost:6006    | -                          |
+| Opik UI              | http://localhost:5174    | -                          |
+| Opik API             | http://localhost:8083    | -                          |
+| Opik OpenAPI Spec    | http://localhost:3003    | -                          |
 | Neo4j Browser        | http://localhost:7474    | neo4j / agentmesh2026      |
 | MinIO Console        | http://localhost:9001    | minioadmin / minioadmin    |
 | OpenSearch Dashboards| http://localhost:5601    | -                          |

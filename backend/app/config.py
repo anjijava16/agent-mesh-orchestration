@@ -242,6 +242,10 @@ class Settings(BaseSettings):
     phoenix_host: str = "phoenix"
     phoenix_grpc_port: int = 4317
 
+    # Opik (Comet AI Observability)
+    opik_enabled: bool = False
+    opik_url: str = "http://opik-backend:8080"
+
     # Neo4j (Graph Database)
     neo4j_uri: str = "bolt://neo4j:7687"
     neo4j_auth: str = "neo4j/agentmesh2026"

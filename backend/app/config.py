@@ -250,6 +250,10 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://neo4j:7687"
     neo4j_auth: str = "neo4j/agentmesh2026"
 
+    # Pinecone (Vector Database)
+    pinecone_api_key: str = "local-dev-key"
+    pinecone_host: str = "http://pinecone:5081"
+
     @property
     def neo4j_user(self) -> str:
         return self.neo4j_auth.split("/", 1)[0] if "/" in self.neo4j_auth else "neo4j"

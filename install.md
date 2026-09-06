@@ -201,6 +201,77 @@ docker compose exec postgres psql -U agentmesh -d agentmesh -c "\l"
 # http://localhost:6006
 ```
 
+### Pinecone Local (Vector Database)
+
+Pinecone Local is an in-memory emulator — no API key or cloud account needed.
+
+```bash
+# Check if Pinecone is running
+curl -s 'http://localhost:5081/indexes' | python3 -m json.tool
+
+# Create an index
+curl -s -X POST 'http://localhost:5081/indexes' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "my-index",
+    "dimension": 1536,
+    "metric": "cosine",
+    "spec": {"serverless": {"cloud": "aws", "region": "us-east-1"}}
+  }' | python3 -m json.tool
+
+# List all indexes
+curl -s 'http://localhost:5081/indexes' | python3 -m json.tool
+
+# Delete an index
+curl -s -X DELETE 'http://localhost:5081/indexes/my-index'
+```
+
+#### Connect from Python (using Pinecone SDK)
+
+```python
+from pinecone import Pinecone
+
+# Connect to Pinecone Local
+pc = Pinecone(api_key="local-dev-key", host="http://localhost:5081")
+
+# Create an index
+pc.create_index(
+    name="rag-index",
+    dimension=1536,
+    metric="cosine",
+    spec={"serverless": {"cloud": "aws", "region": "us-east-1"}},
+)
+
+# Get the index
+index = pc.Index("rag-index")
+
+# Upsert vectors
+index.upsert(vectors=[
+    {"id": "doc1", "values": [0.1] * 1536, "metadata": {"text": "Hello world"}},
+    {"id": "doc2", "values": [0.2] * 1536, "metadata": {"text": "Goodbye world"}},
+])
+
+# Query
+results = index.query(vector=[0.1] * 1536, top_k=5, include_metadata=True)
+print(results)
+```
+
+#### Connect from Jupyter Notebook
+
+```python
+import os
+os.environ["PINECONE_API_KEY"] = "local-dev-key"
+
+from pinecone import Pinecone
+pc = Pinecone(api_key="local-dev-key", host="http://localhost:5081")
+
+# Now use pc as normal — same API as cloud Pinecone
+print(pc.list_indexes())
+```
+
+**Note:** Pinecone Local is in-memory — data is lost when the container restarts.
+For persistent vector storage, use the cloud Pinecone service with a real API key.
+
 ### Opik (Comet AI Observability)
 
 Opik uses its own MySQL + ClickHouse stack.
@@ -286,9 +357,7 @@ docker compose up -d opik-frontend
 | AgentMesh App        | http://localhost:8080    | -                          |
 | AgentMesh API Docs   | http://localhost:8000/docs | -                        |
 | Arize Phoenix        | http://localhost:6006    | -                          |
-| Opik UI              | http://localhost:5174    | -                          |
-| Opik API             | http://localhost:8083    | -                          |
-| Opik OpenAPI Spec    | http://localhost:3003    | -                          |
+| Pinecone Local       | http://localhost:5081    | api_key: local-dev-key     |
 | Neo4j Browser        | http://localhost:7474    | neo4j / agentmesh2026      |
 | MinIO Console        | http://localhost:9001    | minioadmin / minioadmin    |
 | OpenSearch Dashboards| http://localhost:5601    | -                          |

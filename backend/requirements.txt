@@ -2,12 +2,12 @@
 fastapi>=0.133,<1
 uvicorn[standard]==0.37.0
 python-multipart==0.0.20
-sse-starlette==2.1.3
+sse-starlette>=2.1,<3          # loosened: the mcp SDK floors this
 httpx==0.28.1
+httpx-sse>=0.4,<1              # MCP SSE client transport
 
 # ---- config / validation ------------------------------------------------
-#pydantic==2.11.7
-pydantic >=2.12,<3
+pydantic>=2.12,<3
 pydantic-settings==2.10.1
 
 # ---- persistence --------------------------------------------------------
@@ -17,52 +17,69 @@ psycopg[binary]==3.2.9
 alembic==1.16.4
 
 # ---- search / vector ----------------------------------------------------
-opensearch-py[async]==2.8.0   # the [async] extra pulls aiohttp, which AsyncOpenSearch needs
-duckduckgo-search==8.0.1      # free web search, no API key required
-
+opensearch-py[async]==2.8.0   # [async] extra pulls aiohttp, needed by AsyncOpenSearch
+#duckduckgo-search==8.0.1      # free web search, no API key required
+ddgs>=9,<10 
 # ---- queue / cache ------------------------------------------------------
 celery[redis]==5.5.3
-#redis==6.2.0
 redis==5.2.1
 flower==2.0.1
 
 # ---- object storage -----------------------------------------------------
 boto3==1.40.20
 
-# ---- agent frameworks ---------------------------------------------------
-langchain==1.0.3
-langchain-core==1.0.1
-langgraph==1.0.2
-langgraph-prebuilt==1.0.2
+# ---- MCP ----------------------------------------------------------------
+# mcp = official Python SDK (client + low-level server, stdio/SSE/streamable-http)
+# fastmcp = higher-level server framework; it pins its own mcp range, so leave
+#           mcp as a range and let fastmcp win the resolution.
+mcp>=1.9,<2
+fastmcp>=2.10,<3
+langchain-mcp-adapters>=0.1,<1   # exposes MCP tools as LangChain/LangGraph tools
+
+# ---- langchain / langgraph ----------------------------------------------
+# Kept as compatible ranges so pip can resolve one consistent core version.
+# langchain-community requires langchain-core>=1.4, which was the pin conflict.
+langchain>=1.0,<2
+langchain-core>=1.4,<2
+langchain-community>=0.4,<0.5
+langchain-text-splitters>=1.1,<2
+langgraph>=1.0,<2
+langgraph-prebuilt>=1.0,<2
 langgraph-checkpoint>=2.1.0,<4
 langgraph-sdk>=0.2.2,<0.3
-langchain-openai==1.0.1
-langchain-anthropic==1.0.1
-langchain-google-genai==2.1.12
-deepagents==0.2.4
-#deepagents==0.6.12
+langchain-openai>=1.0,<2
+langchain-anthropic>=1.0,<2
+langchain-google-genai>=2.1.12,<3
+langchain-huggingface>=1.0,<2    # 1.x line — needs langchain-core 1.x
+langchain-tavily==0.2.18
+langchain-pinecone==0.2.13
+deepagents>=0.2.4,<0.3
+
+# ---- local embeddings / reranking ---------------------------------------
+# Heavy: pulls torch + transformers + huggingface-hub (~2-3 GB with CUDA wheels).
+# See the Dockerfile note about installing the CPU-only torch build.
+sentence-transformers>=5,<6
+
+# ---- other agent frameworks / SDKs --------------------------------------
 google-adk==2.7.1
 google-auth==2.56.3
 google-genai==2.20.0
 litellm==1.77.3
-#claude-agent-sdk==0.1.10
 claude-agent-sdk==0.2.107
 anthropic==0.69.0
-openai==1.109.1
 
+# openai loosened: openai-agents floors the client at a recent version,
+# so a hard pin here tends to deadlock the resolver.
+openai>=1.109,<2
+openai-agents
 
-# Micrsoft agentic framework
-
+# Microsoft Agent Framework
 agent-framework-core==1.15.0
 agent-framework-orchestrations==1.1.1
 
-
-# AWS pip install strands-agents
+# AWS Strands
 strands-agents==1.11.0
 strands-agents-tools==0.2.10
-
-# OpenAI Agent sdk
-openai-agents
 
 # ---- document parsing ---------------------------------------------------
 pypdf==5.9.0
@@ -91,3 +108,221 @@ prometheus-client==0.23.1
 
 # ---- graph database -----------------------------------------------------
 neo4j==5.28.1
+
+# ---- vector database ----------------------------------------------------
+pinecone==6.0.2   # 6.x line — required by langchain-pinecone 0.2.x
+
+# # ---- web ----------------------------------------------------------------
+# fastapi>=0.133,<1
+# uvicorn[standard]==0.37.0
+# python-multipart==0.0.20
+# sse-starlette>=2.1,<3          # loosened: the mcp SDK floors this
+# httpx==0.28.1
+# httpx-sse>=0.4,<1              # MCP SSE client transport
+
+# # ---- config / validation ------------------------------------------------
+# pydantic>=2.12,<3
+# pydantic-settings==2.10.1
+
+# # ---- persistence --------------------------------------------------------
+# sqlalchemy[asyncio]==2.0.43
+# asyncpg==0.30.0
+# psycopg[binary]==3.2.9
+# alembic==1.16.4
+
+# # ---- search / vector ----------------------------------------------------
+# opensearch-py[async]==2.8.0   # [async] extra pulls aiohttp, needed by AsyncOpenSearch
+# duckduckgo-search==8.0.1      # free web search, no API key required
+
+# # ---- queue / cache ------------------------------------------------------
+# celery[redis]==5.5.3
+# redis==5.2.1
+# flower==2.0.1
+
+# # ---- object storage -----------------------------------------------------
+# boto3==1.40.20
+
+# # ---- MCP ----------------------------------------------------------------
+# # mcp = official Python SDK (client + low-level server, stdio/SSE/streamable-http)
+# # fastmcp = higher-level server framework; it pins its own mcp range, so leave
+# #           mcp as a range and let fastmcp win the resolution.
+# mcp>=1.9,<2
+# fastmcp>=2.10,<3
+# langchain-mcp-adapters>=0.1,<1   # exposes MCP tools as LangChain/LangGraph tools
+
+# # ---- langchain / langgraph ----------------------------------------------
+# # Kept as compatible ranges so pip can resolve one consistent core version.
+# # langchain-community requires langchain-core>=1.4, which was the pin conflict.
+# langchain>=1.0,<2
+# langchain-core>=1.4,<2
+# langchain-community>=0.4,<0.5
+# langchain-text-splitters>=1.1,<2
+# langgraph>=1.0,<2
+# langgraph-prebuilt>=1.0,<2
+# langgraph-checkpoint>=2.1.0,<4
+# langgraph-sdk>=0.2.2,<0.3
+# langchain-openai>=1.0,<2
+# langchain-anthropic>=1.0,<2
+# langchain-google-genai>=2.1.12,<3
+# langchain-tavily==0.2.18
+# langchain-pinecone==0.2.13
+# deepagents>=0.2.4,<0.3
+
+# # ---- other agent frameworks / SDKs --------------------------------------
+# google-adk==2.7.1
+# google-auth==2.56.3
+# google-genai==2.20.0
+# litellm==1.77.3
+# claude-agent-sdk==0.2.107
+# anthropic==0.69.0
+
+# # openai loosened: openai-agents floors the client at a recent version,
+# # so a hard pin here tends to deadlock the resolver.
+# openai>=1.109,<2
+# openai-agents
+
+# # Microsoft Agent Framework
+# agent-framework-core==1.15.0
+# agent-framework-orchestrations==1.1.1
+
+# # AWS Strands
+# strands-agents==1.11.0
+# strands-agents-tools==0.2.10
+
+# # ---- document parsing ---------------------------------------------------
+# pypdf==5.9.0
+# python-docx==1.2.0
+# openpyxl==3.1.5
+# beautifulsoup4==4.13.4
+# lxml==5.3.0
+
+# # ---- observability ------------------------------------------------------
+# structlog==25.4.0
+# opentelemetry-api>=1.41,<2
+# opentelemetry-sdk>=1.41,<2
+# opentelemetry-instrumentation-fastapi>=0.62b1
+# opentelemetry-instrumentation-httpx>=0.62b1
+# opentelemetry-exporter-otlp>=1.41,<2
+# arize-phoenix-otel>=0.9
+# openinference-instrumentation-openai>=0.1.25
+# openinference-instrumentation-anthropic>=0.1.10
+# openinference-instrumentation-langchain>=0.1.68
+# openinference-instrumentation-litellm>=0.1.2
+# openinference-instrumentation-google-genai>=1.3.0
+# openinference-instrumentation-google-adk>=0.1.3
+# openinference-instrumentation-bedrock>=0.1.6
+# opik>=1.6.0
+# prometheus-client==0.23.1
+
+# # ---- graph database -----------------------------------------------------
+# neo4j==5.28.1
+
+# # ---- vector database ----------------------------------------------------
+# pinecone==6.0.2   # 6.x line — required by langchain-pinecone 0.2.x
+# # ---- web ----------------------------------------------------------------
+# fastapi>=0.133,<1
+# uvicorn[standard]==0.37.0
+# python-multipart==0.0.20
+# sse-starlette==2.1.3
+# httpx==0.28.1
+
+# # ---- config / validation ------------------------------------------------
+# #pydantic==2.11.7
+# pydantic >=2.12,<3
+# pydantic-settings==2.10.1
+
+# # ---- persistence --------------------------------------------------------
+# sqlalchemy[asyncio]==2.0.43
+# asyncpg==0.30.0
+# psycopg[binary]==3.2.9
+# alembic==1.16.4
+
+# # ---- search / vector ----------------------------------------------------
+# opensearch-py[async]==2.8.0   # the [async] extra pulls aiohttp, which AsyncOpenSearch needs
+# duckduckgo-search==8.0.1      # free web search, no API key required
+# #pinecone==7.3.0
+
+# # ---- queue / cache ------------------------------------------------------
+# celery[redis]==5.5.3
+# #redis==6.2.0
+# redis==5.2.1
+# flower==2.0.1
+
+# # ---- object storage -----------------------------------------------------
+# boto3==1.40.20
+
+# # ---- agent frameworks ---------------------------------------------------
+# langchain==1.0.3
+# #langchain-core==1.0.1
+# langchain-core>=1.4,<2
+# langgraph==1.0.2
+# langgraph-prebuilt==1.0.2
+# langgraph-checkpoint>=2.1.0,<4
+# langgraph-sdk>=0.2.2,<0.3
+# langchain-openai==1.0.1
+# langchain-anthropic==1.0.1
+# langchain-google-genai==2.1.12
+# deepagents==0.2.4
+# #deepagents==0.6.12
+# google-adk==2.7.1
+# google-auth==2.56.3
+# google-genai==2.20.0
+# litellm==1.77.3
+# #claude-agent-sdk==0.1.10
+# claude-agent-sdk==0.2.107
+# anthropic==0.69.0
+# openai==1.109.1
+
+# # Langchain & Langgraph
+# #langgraph==1.1.10
+# #langchain-core==1.6.1
+# langchain-community==0.4.2
+# #@langchain-openai==1.6.0
+# langchain-tavily==0.2.18
+# langchain-pinecone==0.2.13
+# langchain-text-splitters==1.1.2
+
+
+# # Micrsoft agentic framework
+
+# agent-framework-core==1.15.0
+# agent-framework-orchestrations==1.1.1
+
+
+# # AWS pip install strands-agents
+# strands-agents==1.11.0
+# strands-agents-tools==0.2.10
+
+# # OpenAI Agent sdk
+# openai-agents
+
+# # ---- document parsing ---------------------------------------------------
+# pypdf==5.9.0
+# python-docx==1.2.0
+# openpyxl==3.1.5
+# beautifulsoup4==4.13.4
+# lxml==5.3.0
+
+# # ---- observability ------------------------------------------------------
+# structlog==25.4.0
+# opentelemetry-api>=1.41,<2
+# opentelemetry-sdk>=1.41,<2
+# opentelemetry-instrumentation-fastapi>=0.62b1
+# opentelemetry-instrumentation-httpx>=0.62b1
+# opentelemetry-exporter-otlp>=1.41,<2
+# arize-phoenix-otel>=0.9
+# openinference-instrumentation-openai>=0.1.25
+# openinference-instrumentation-anthropic>=0.1.10
+# openinference-instrumentation-langchain>=0.1.68
+# openinference-instrumentation-litellm>=0.1.2
+# openinference-instrumentation-google-genai>=1.3.0
+# openinference-instrumentation-google-adk>=0.1.3
+# openinference-instrumentation-bedrock>=0.1.6
+# opik>=1.6.0
+# prometheus-client==0.23.1
+
+# # ---- graph database -----------------------------------------------------
+# neo4j==5.28.1
+
+# # ---- vector database (Pinecone) -----------------------------------------
+# pinecone==6.0.2

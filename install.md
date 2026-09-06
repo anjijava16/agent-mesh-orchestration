@@ -57,6 +57,17 @@ docker compose exec postgres psql -U agentmesh -d agentmesh -c "\dt"
 # Cluster health
 docker compose exec opensearch curl -s 'http://localhost:9200/_cluster/health' | python3 -m json.tool
 
+
+(base) welcome@jaisairams-Laptop agentmesh % docker compose exec opensearch curl -s 'http://localhost:9200/_cat/indices?v'
+health status index                     uuid                   pri rep docs.count docs.deleted store.size pri.store.size
+green  open   .opensearch-observability WHLj3LWBSZSP0AlX91bNCw   1   0          0            0       208b           208b
+green  open   .plugins-ml-config        UlFpE7XIQmWhEufQaOrvRw   1   0          1            0      3.9kb          3.9kb
+green  open   agentmesh-documents       D5vYHqLCRL2kYwYzDdKciQ   2   0          0            0       462b           462b
+green  open   agentmesh-longterm-memory ISn3r6vURuazF1HxsknDlw   1   0          0            0       208b           208b
+(base) welcome@jaisairams-Laptop agentmesh % 
+
+
+
 # List all indices
 docker compose exec opensearch curl -s 'http://localhost:9200/_cat/indices?v'
 
@@ -152,37 +163,39 @@ docker compose exec neo4j cypher-shell -u neo4j -p agentmesh2026 "MATCH (n) RETU
 
 ### Arize Phoenix (AI Observability)
 
+Phoenix uses the same Postgres instance (database: `phoenix`).
+
 ```bash
-# Check Phoenix data files on your Mac
-ls -la infra/phoenix/data/
+# Connect to the Phoenix database
+docker compose exec postgres psql -U agentmesh -d phoenix
 
-```
-(base) welcome@jaisairams-Laptop agentmesh % ls -la infra/phoenix/data/
-total 2664
-drwxr-xr-x@ 8 welcome  staff     256 Sep  5 22:27 .
-drwxr-xr-x@ 3 welcome  staff      96 Sep  5 22:27 ..
-drwxr-xr-x  2 welcome  staff      64 Sep  5 22:27 inferences
--rw-r--r--  1 welcome  staff  987136 Sep  5 22:27 phoenix.db
--rw-r--r--  1 welcome  staff   32768 Sep  5 22:27 phoenix.db-shm
--rw-r--r--@ 1 welcome  staff  280192 Sep  5 22:27 phoenix.db-wal
-drwxr-xr-x  2 welcome  staff      64 Sep  5 22:27 trace_datasets
-drwxr-xr-x  2 welcome  staff      64 Sep  5 22:27 wasm
-(base) welcome@jaisairams-Laptop agentmesh % ls -ltr infra/
-total 0
-drwxr-xr-x@ 3 welcome  staff   96 Sep  4 11:08 postgres
-drwxr-xr-x@ 4 welcome  staff  128 Sep  4 11:08 opensearch
-drwxr-xr-x@ 3 welcome  staff   96 Sep  4 11:08 nginx
-drwxr-xr-x@ 3 welcome  staff   96 Sep  5 22:27 phoenix
-(base) welcome@jaisairams-Laptop agentmesh %    
+# Once inside psql:
+\dt                              -- list all Phoenix tables
+\d+ spans                        -- describe the spans table
+SELECT count(*) FROM projects;
+SELECT count(*) FROM spans;
+SELECT count(*) FROM traces;
 
-```
+# Recent traces
+SELECT id, trace_id, name, status_code, latency_ms 
+FROM spans ORDER BY created_at DESC LIMIT 10;
 
-# The SQLite DB file
-ls -lh infra/phoenix/data/phoenix.db
+# Projects
+SELECT id, name, created_at FROM projects;
 
-# Query the Phoenix DB directly (if sqlite3 is installed)
-sqlite3 infra/phoenix/data/phoenix.db ".tables"
-sqlite3 infra/phoenix/data/phoenix.db "SELECT count(*) FROM spans;"
+# Datasets and experiments
+SELECT id, name, created_at FROM datasets;
+SELECT id, name, created_at FROM experiments;
+\q                               -- quit
+
+# One-liners from host
+docker compose exec postgres psql -U agentmesh -d phoenix -c "\dt"
+docker compose exec postgres psql -U agentmesh -d phoenix -c "SELECT count(*) FROM spans;"
+docker compose exec postgres psql -U agentmesh -d phoenix -c "SELECT count(*) FROM traces;"
+docker compose exec postgres psql -U agentmesh -d phoenix -c "SELECT name, count(*) FROM spans GROUP BY name ORDER BY count DESC LIMIT 10;"
+
+# List all databases in Postgres (agentmesh + phoenix)
+docker compose exec postgres psql -U agentmesh -d agentmesh -c "\l"
 
 # Or use the Phoenix Web UI
 # http://localhost:6006
@@ -199,7 +212,7 @@ sqlite3 infra/phoenix/data/phoenix.db "SELECT count(*) FROM spans;"
 | Arize Phoenix        | http://localhost:6006    | -                          |
 | Neo4j Browser        | http://localhost:7474    | neo4j / agentmesh2026      |
 | MinIO Console        | http://localhost:9001    | minioadmin / minioadmin    |
-| OpenSearch Dashboards| http://localhost:5601    | (tools profile only)       |
+| OpenSearch Dashboards| http://localhost:5601    | -                          |
 | Flower (Celery)      | http://localhost:5555    | (tools profile only)       |
 
 ## Useful Docker Commands

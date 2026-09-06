@@ -9,3 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";   -- trigram search over message conte
 CREATE SCHEMA IF NOT EXISTS adk;
 
 ALTER DATABASE agentmesh SET timezone TO 'UTC';
+
+-- Separate database for Arize Phoenix (AI observability).
+-- Phoenix manages its own schema and migrations.
+CREATE DATABASE phoenix;

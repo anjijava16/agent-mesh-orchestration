@@ -21,11 +21,13 @@ from app.config import settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import CorrelationMiddleware, RateLimitMiddleware
+from app.core.tracing import setup_tracing
 from app.db.session import dispose_engine
 from app.search.client import close_opensearch
 from app.search.indices import ensure_indices
 
 configure_logging(settings.log_level, settings.log_format)
+setup_tracing()
 log = get_logger(__name__)
 
 

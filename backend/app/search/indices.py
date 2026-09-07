@@ -105,6 +105,15 @@ def memory_mapping() -> dict[str, Any]:
 
 
 async def ensure_indices() -> None:
+    from app.config import VectorBackend
+
+    if settings.vector_backend is VectorBackend.MONGODB:
+        from app.search.mongo_client import ensure_mongo_collections
+        await ensure_mongo_collections()
+        log.info("vector_backend_ready", backend="mongodb")
+        return
+
+    # OpenSearch path (default).
     client = get_opensearch()
     for name, body in (
         (settings.opensearch.documents_index, documents_mapping()),
@@ -115,3 +124,4 @@ async def ensure_indices() -> None:
             log.info("opensearch_index_created", index=name)
         else:
             log.debug("opensearch_index_present", index=name)
+    log.info("vector_backend_ready", backend="opensearch")

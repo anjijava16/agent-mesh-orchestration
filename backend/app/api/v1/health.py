@@ -63,6 +63,39 @@ async def _check_storage() -> dict[str, Any]:
         return {"status": "down", "error": str(exc)[:200]}
 
 
+async def _check_litellm() -> dict[str, Any]:
+    """Check the LiteLLM proxy container is healthy and responding."""
+    if not settings.litellm_enabled:
+        return {"status": "disabled"}
+    try:
+        import httpx
+
+        url = f"{settings.litellm_base_url.rstrip('/')}/health"
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {settings.litellm_master_key}"})
+            resp.raise_for_status()
+            data = resp.json()
+            return {"status": "up", "models": len(data.get("healthy_endpoints", []))}
+    except Exception as exc:
+        return {"status": "down", "error": str(exc)[:200]}
+
+
+async def _check_mongodb() -> dict[str, Any]:
+    """Check MongoDB connectivity (only when VECTOR_BACKEND=mongodb)."""
+    from app.config import VectorBackend
+
+    if settings.vector_backend is not VectorBackend.MONGODB:
+        return {"status": "disabled", "note": "vector_backend is not mongodb"}
+    try:
+        from app.search.mongo_client import get_mongo_async
+        db = get_mongo_async()
+        await db.command("ping")
+        collections = await db.list_collection_names()
+        return {"status": "up", "database": settings.mongodb.database, "collections": len(collections)}
+    except Exception as exc:
+        return {"status": "down", "error": str(exc)[:200]}
+
+
 @router.get("/health/live")
 async def live() -> dict:
     return {"status": "alive", "version": VERSION}
@@ -81,12 +114,17 @@ async def ready(response: Response) -> dict:
 
 @router.get("/health")
 async def health() -> dict:
-    checks = await asyncio.gather(_check_postgres(), _check_opensearch(), _check_redis(), _check_storage())
-    names = ("postgres", "opensearch", "redis", "object_storage")
+    checks = await asyncio.gather(
+        _check_postgres(), _check_opensearch(), _check_redis(), _check_storage(),
+        _check_litellm(), _check_mongodb(),
+    )
+    names = ("postgres", "opensearch", "redis", "object_storage", "litellm", "mongodb")
     dependencies = dict(zip(names, checks, strict=True))
     breakers = CircuitBreaker.snapshot()
     pb_breakers = pybreaker_snapshot()
-    degraded = any(c["status"] == "down" for c in checks) or any(
+    degraded = any(
+        c["status"] == "down" for c in checks
+    ) or any(
         b["state"] == "open" for b in breakers.values()
     ) or any(
         b["state"] == "open" for b in pb_breakers.values()

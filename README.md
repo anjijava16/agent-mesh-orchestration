@@ -19,6 +19,7 @@ React console  ──>  FastAPI  ──>  Agent runtime  ──>  ┌ Google ADK
 - [Tech stack](#tech-stack)
 - [Why this exists](#why-this-exists)
 - [Quickstart](#quickstart)
+- [Docker Compose services](#docker-compose-services)
 - [Architecture deep dive](#architecture-deep-dive)
 - [The seven runtimes](#the-seven-runtimes)
 - [The five agents and their tools](#the-five-agents-and-their-tools)
@@ -51,15 +52,18 @@ React console  ──>  FastAPI  ──>  Agent runtime  ──>  ┌ Google ADK
 | Swarm orchestration | **AWS Strands Agents** | `Swarm` with `LiteLLMModel`, shared context, autonomous handoffs between specialists |
 | LLM providers | **OpenAI** / **Anthropic** / **Google GenAI** | Claude Sonnet 4.6, GPT-4.1, Gemini 2.5 Pro (configurable per request) |
 | LLM routing | **LiteLLM** | Unified `provider/model` format for ADK, Strands, and MS Agent runtimes |
-| Embeddings | **OpenAI text-embedding-3-small** | Default embedding model for RAG and long-term memory (via `langchain-openai`) |
-| RAG retrieval | **OpenSearch 2.17** | Hybrid BM25 + kNN (HNSW/Lucene) fused by Reciprocal Rank Fusion |
+| LLM gateway | **LiteLLM Proxy** (Docker service) | Single egress point for all model traffic — latency-based routing, cross-provider fallbacks, spend tracking, unified logging (port 4000) |
+| Embeddings | **OpenAI text-embedding-3-small** | Default embedding model for RAG and long-term memory (via `langchain-openai` or LiteLLM proxy) |
+| RAG retrieval (default) | **OpenSearch 2.17** | Hybrid BM25 + kNN (HNSW/Lucene) fused by Reciprocal Rank Fusion |
+| RAG retrieval (alt) | **MongoDB 7** + **Atlas Vector Search** | Config-driven alternative: `$vectorSearch` + `$text` with RRF fusion (set `VECTOR_BACKEND=mongodb`) |
 | Reranking | **sentence-transformers** (`ms-marco-MiniLM-L-6-v2`) | Optional cross-encoder reranking on the fused head |
 | Short-term memory | **PostgreSQL 16** + **SQLAlchemy asyncio** + **asyncpg** | Full conversation transcript, agent steps, rolling summary |
-| Long-term memory | **OpenSearch** (semantic index) | LLM-extracted durable facts, embedded for cross-conversation recall |
+| Long-term memory | **OpenSearch** or **MongoDB** (semantic index) | LLM-extracted durable facts, embedded for cross-conversation recall (backend follows `VECTOR_BACKEND`) |
 | Session memory | **ADK DatabaseSessionService** + **Postgres** | ADK session persistence (declarative pipeline + graph workflow runtimes) |
 | Task queue | **Celery 5.5** + **Redis 7** | Document ingestion workers with `acks_late`, deterministic chunk ids, backoff retries |
 | Object storage | **MinIO** / **S3** (via **boto3**) | Uploaded documents, presigned download URLs |
 | Database ORM | **SQLAlchemy 2.0** (async) + **Alembic** | 9 models, async repositories, JSONB with GIN indexes, migration chain |
+| MongoDB driver | **motor** (async) + **pymongo** (sync) | Atlas Vector Search for RAG, async for API server, sync for Celery workers |
 | Auth | **Header-based** (`X-User-ID`) | Seam for JWT/OIDC; everything downstream takes a user id string |
 | Rate limiting (global) | **Custom sliding-window middleware** | Per-user, in-process, skips health/docs paths |
 | Rate limiting (per-endpoint) | **slowapi** | Granular limits: chat 30/min, uploads 20/min, search 60/min |
@@ -124,6 +128,7 @@ make up
 | Console | http://localhost:8080 |
 | API docs | http://localhost:8000/docs |
 | Phoenix UI | http://localhost:6006 |
+| LiteLLM UI | http://localhost:4000/ui |
 | MinIO console | http://localhost:9001 (`minioadmin` / `minioadmin`) |
 | Neo4j Browser | http://localhost:7474 |
 | OpenSearch Dashboards | http://localhost:5601 (run `make tools`) |
@@ -155,6 +160,85 @@ cd frontend && npm install && npm run dev     # http://localhost:5173
 
 ---
 
+## Docker Compose services
+
+The full local stack runs 14 active services plus one init container. Every service has a healthcheck and every dependent waits on it, so `docker compose up -d` is deterministic.
+
+### Core application
+
+| Service | Container | Image | Ports | Role | Credentials / Notes |
+|---|---|---|---|---|---|
+| **frontend** | `agentmesh-frontend` | Custom (Vite + nginx) | `8080:80` | React console | Open http://localhost:8080 |
+| **backend** | `agentmesh-backend` | Custom (FastAPI + uvicorn) | `8000:8000` | API server, SSE streaming, agent orchestration | API docs at http://localhost:8000/docs |
+| **celery-worker** | `agentmesh-worker` | Same as backend | none | Document ingestion workers (parse, chunk, embed, index) | 2 queues: `ingest`, `default`. Scale with `make scale-workers n=4` |
+| **flower** | `agentmesh-flower` | Same as backend | `5555:5555` | Celery task monitoring UI | `make tools` to start. Open http://localhost:5555. Profile: `tools` |
+
+### LLM gateway
+
+| Service | Container | Image | Ports | Role | Credentials / Notes |
+|---|---|---|---|---|---|
+| **litellm** | `agentmesh-litellm` | `ghcr.io/berriai/litellm:main-stable` | `4000:4000` | LLM proxy: routing, fallbacks, spend tracking | UI at http://localhost:4000/ui. Master key: `sk-agentmesh-local` (via `LITELLM_MASTER_KEY`). Config: `infra/litellm/config.yaml` |
+
+### Datastores
+
+| Service | Container | Image | Ports | Role | Credentials / Notes |
+|---|---|---|---|---|---|
+| **postgres** | `agentmesh-postgres` | `postgres:16-alpine` | `5432:5432` | Conversations, messages, runs, steps, documents, settings, audit logs, ADK sessions, Phoenix traces, LiteLLM spend | User: `agentmesh` / Password: `agentmesh` / DB: `agentmesh`. Connect: `psql -h localhost -U agentmesh -d agentmesh` or `make psql` |
+| **redis** | `agentmesh-redis` | `redis:7-alpine` | `6379:6379` | Celery broker + result backend, rate limiting | No password (local). AOF persistence enabled |
+| **opensearch** | `agentmesh-opensearch` | `opensearchproject/opensearch:2.17.1` | `9200:9200` | Default vector backend: document chunks (hybrid BM25 + kNN), long-term memory | Security plugin disabled locally. ~1 GB heap. API: http://localhost:9200 |
+| **opensearch-dashboards** | `agentmesh-dashboards` | `opensearchproject/opensearch-dashboards:2.17.1` | `5601:5601` | OpenSearch visual management | Open http://localhost:5601. `make tools` profile |
+| **mongodb** | `agentmesh-mongodb` | `mongo:7` | `27017:27017` | Alternative vector backend (set `VECTOR_BACKEND=mongodb`) | No auth (local). Replica set `rs0` for `$vectorSearch` support. Connect: `mongosh mongodb://localhost:27017/agentmesh` |
+| **neo4j** | `agentmesh-neo4j` | `neo4j:5-community` | `7474:7474` (HTTP), `7687:7687` (Bolt) | Graph database | User: `neo4j` / Password: `agentmesh2026`. Browser: http://localhost:7474. APOC plugin enabled |
+| **pinecone** | `agentmesh-pinecone` | `ghcr.io/pinecone-io/pinecone-local:latest` | `5081-5090:5081-5090` | In-memory Pinecone emulator for notebook experiments | No API key needed. Controller: http://localhost:5081. Data is in-memory (lost on restart) |
+
+### Object storage
+
+| Service | Container | Image | Ports | Role | Credentials / Notes |
+|---|---|---|---|---|---|
+| **minio** | `agentmesh-minio` | `minio/minio:RELEASE.2025-04-22T22-12-26Z` | `9000:9000` (API), `9001:9001` (Console) | S3-compatible object storage for uploaded documents | Console: http://localhost:9001. User: `minioadmin` / Password: `minioadmin`. Bucket: `agentmesh-uploads` |
+| **minio-init** | `agentmesh-minio-init` | `minio/mc:RELEASE.2025-04-16T18-13-26Z` | none | One-shot: creates the upload bucket on first start | Runs once and exits |
+
+### Observability
+
+| Service | Container | Image | Ports | Role | Credentials / Notes |
+|---|---|---|---|---|---|
+| **phoenix** | `agentmesh-phoenix` | `arizephoenix/phoenix:latest` | `6006:6006` (UI), `4317:4317` (OTLP gRPC), `4318:4318` (OTLP HTTP) | AI observability: LLM traces, tool spans, agent handoffs | UI: http://localhost:6006. Stores traces in Postgres (`phoenix` database). Every LLM call across all providers and frameworks is captured |
+| **opik** (disabled) | — | `ghcr.io/comet-ml/opik/*` | `5174:5174` (UI), `8083:8080` (API) | Alternative AI observability (Comet) | Requires 7 extra containers. Enable with `OPIK_ENABLED=true` + uncomment services. UI: http://localhost:5174 |
+
+### Quick access summary
+
+```
+http://localhost:8080    Console (React UI)
+http://localhost:8000    Backend API (FastAPI + /docs)
+http://localhost:4000    LiteLLM Proxy (/ui for dashboard)
+http://localhost:6006    Phoenix (AI traces)
+http://localhost:9001    MinIO Console (minioadmin / minioadmin)
+http://localhost:7474    Neo4j Browser (neo4j / agentmesh2026)
+http://localhost:5601    OpenSearch Dashboards (make tools)
+http://localhost:5555    Flower (make tools)
+http://localhost:5081    Pinecone Local controller
+http://localhost:9200    OpenSearch API
+http://localhost:27017   MongoDB (mongosh mongodb://localhost:27017/agentmesh)
+http://localhost:5432    PostgreSQL (psql -h localhost -U agentmesh -d agentmesh)
+http://localhost:6379    Redis (redis-cli)
+```
+
+### Volumes
+
+All data survives `docker compose down`. Use `docker compose down -v` (or `make clean`) to wipe everything.
+
+| Volume | Service | Contents |
+|---|---|---|
+| `pgdata` | postgres | All Postgres databases (agentmesh, phoenix, litellm) |
+| `redisdata` | redis | Celery broker queues, AOF journal |
+| `osdata` | opensearch | Document chunks, memory vectors, HNSW indexes |
+| `miniodata` | minio | Uploaded document files |
+| `neo4jdata` | neo4j | Graph database |
+| `neo4jlogs` | neo4j | Neo4j server logs |
+| `mongodata` | mongodb | Document chunks and memory (when `VECTOR_BACKEND=mongodb`) |
+
+---
+
 ## Architecture deep dive
 
 ```
@@ -169,30 +253,31 @@ cd frontend && npm install && npm run dev     # http://localhost:5173
 │  routes: chat . conversations . runs . settings . files . search . audit    │
 │                               ChatService                                   │
 │       resolve config -> assemble memory -> open run -> stream -> persist     │
-└────┬─────────────────────────────┬────────────────────────────┬─────────────┘
-     │                             │                            │
-┌────▼───────────────┐   ┌────────▼───────────┐   ┌────────────▼──────────────┐
-│ Agent runtime      │   │ Memory             │   │ Retrieval                 │
-│ ADK pipeline       │   │ short: Postgres    │   │ BM25 || kNN -> RRF        │
-│ ADK workflow       │   │ long:  OpenSearch  │   │ (optional cross-encoder   │
-│ LangGraph          │   │ summary: rolling   │   │  reranking)               │
-│ DeepAgents         │   └────────────────────┘   │ OpenSearch                │
-│ Claude SDK         │                            └───────────────────────────┘
-│ MS Agent Framework │
-│ Strands Agents     │
-└────┬───────────────┘
+└────┬──────────────────┬──────────────────┬──────────────────┬───────────────┘
+     │                  │                  │                  │
+┌────▼────────────┐ ┌───▼──────────┐ ┌─────▼──────────┐ ┌────▼────────────────┐
+│ Agent runtime   │ │ LiteLLM Proxy│ │ Memory         │ │ Retrieval           │
+│ ADK pipeline    │ │ (port 4000)  │ │ short: Postgres│ │ (config-driven)     │
+│ ADK workflow    │ │ routing,     │ │ long: OS or    │ │ OpenSearch (default) │
+│ LangGraph       │ │ fallbacks,   │ │       MongoDB  │ │ -- or --            │
+│ DeepAgents      │ │ spend track  │ │ summary: PG   │ │ MongoDB Atlas Vector │
+│ Claude SDK      │ └──────┬───────┘ └────────────────┘ │ BM25+kNN -> RRF     │
+│ MS Agent Frmwk  │        │                             └─────────────────────┘
+│ Strands Agents  │        ▼
+└────┬────────────┘  OpenAI / Anthropic / Google
      │ 8 tools, each with a breaker and a timeout
      │
 ┌────▼────────────────────────────────────────────────────────────────────────┐
 │ Infrastructure                                                              │
-│ PostgreSQL 16   OpenSearch 2.17   Redis 7 + Celery   MinIO / S3            │
-│ (transcripts,   (chunks, memory,  (ingestion queue,  (uploaded files,      │
-│  runs, steps,    hybrid indices)   2 queues, retries)  presigned URLs)      │
+│ PostgreSQL 16   OpenSearch 2.17   MongoDB 7       Redis 7 + Celery         │
+│ (transcripts,   (chunks, memory   (alt vector     (ingestion queue,        │
+│  runs, steps,    when OS backend)  backend)         2 queues, retries)      │
 │  settings,                                                                  │
-│  audit logs)                                                                │
+│  audit logs)    MinIO / S3        Neo4j           Pinecone Local           │
+│                 (uploaded files)   (graph DB)      (notebook experiments)   │
 │                                                                             │
-│ Arize Phoenix (OTLP)   Opik (Comet)   Neo4j   Pinecone Local              │
-│ (LLM traces, spans)    (alt traces)   (graph)  (vector experiments)        │
+│ Arize Phoenix (OTLP)   Opik (Comet)   LiteLLM (model gateway)             │
+│ (LLM traces, spans)    (alt traces)   (routing, fallbacks, spend)          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -207,7 +292,7 @@ cd frontend && npm install && npm run dev     # http://localhost:5173
 4. Memory is assembled:
    - Last N turns from Postgres (`ShortTermMemory.window()`, default 20)
    - Rolling summary if the thread outgrew the window
-   - Semantically recalled long-term memories from OpenSearch (if enabled)
+   - Semantically recalled long-term memories from OpenSearch or MongoDB (if enabled, follows `VECTOR_BACKEND`)
 
 5. An `agent_runs` row is opened and **committed immediately**. If the process dies mid-stream, the run is still visible with status `running` rather than vanishing silently.
 
@@ -393,6 +478,17 @@ The key function prefers `X-User-ID`, falls back to client IP. The custom `RateL
 
 ## Hybrid RAG retrieval
 
+Two retrieval backends, selected by `VECTOR_BACKEND`:
+
+| Backend | Set via | Best for |
+|---|---|---|
+| **OpenSearch** (default) | `VECTOR_BACKEND=opensearch` | Full hybrid BM25 + kNN with HNSW, mature tuning knobs |
+| **MongoDB Atlas Vector Search** | `VECTOR_BACKEND=mongodb` | Teams already on MongoDB Atlas, simpler ops footprint |
+
+Both backends use the same RRF fusion, the same `SearchHit` dataclass, and the same reranking path. The dispatch happens in `hybrid_search()` — everything above it (tools, agents, memory) is backend-agnostic.
+
+### OpenSearch path (default)
+
 Two independent queries — BM25 and kNN — fused by **Reciprocal Rank Fusion**:
 
 ```
@@ -411,6 +507,67 @@ The two legs run concurrently via `asyncio.gather` with `return_exceptions=True`
 
 Optional cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) runs on the fused head. Off by default — it roughly doubles p95 retrieval latency.
 
+### MongoDB path
+
+When `VECTOR_BACKEND=mongodb`, the same hybrid pattern runs against MongoDB:
+
+- **Vector leg**: `$vectorSearch` aggregation stage (Atlas) with cosine similarity, pre-filtered by `user_id`. Falls back to brute-force cosine on local dev (no Atlas Search indexes).
+- **Text leg**: `$text` search with `textScore`, falling back to regex if no text index exists.
+- **Fusion**: Same RRF as OpenSearch, same `SearchHit` output. Tools and agents see no difference.
+
+Ingestion writes chunks as MongoDB documents with the same deterministic `_id` pattern (`{document_id}:{chunk.index}`), so idempotency works identically.
+
+Local dev runs a single-node replica set (`--replSet rs0`) so `$vectorSearch` stages are accepted. Production should point `MONGODB_URI` at Atlas.
+
+```bash
+# Switch to MongoDB backend:
+VECTOR_BACKEND=mongodb docker compose up -d
+```
+
+---
+
+## LiteLLM gateway
+
+All LLM traffic goes through a **LiteLLM Proxy** container (port 4000) when `LITELLM_ENABLED=true` (the default in Docker).
+
+```
+backend  ──(OpenAI-compatible API)──>  litellm:4000  ──>  OpenAI / Anthropic / Google
+                                           │
+                                    routing, fallbacks,
+                                    spend tracking, logging
+```
+
+### Why a separate gateway
+
+1. **Provider swap without code changes.** The proxy resolves model names (`claude-sonnet-4-6`, `gpt-4.1`, `gemini-2.5-pro`) to the right provider endpoint. Adding a new provider or switching a model is a YAML change in `infra/litellm/config.yaml`.
+
+2. **Cross-provider fallbacks.** If Anthropic is down, the proxy automatically tries OpenAI then Google, configured as fallback chains.
+
+3. **Spend tracking.** Every call is logged with tokens, cost, and latency. The `/spend/logs` endpoint gives you a spend report without custom accounting code.
+
+4. **Latency-based routing.** When multiple deployments serve the same logical model, the proxy routes to the fastest one.
+
+### Configuration
+
+`infra/litellm/config.yaml` defines:
+- `model_list` — 8 models across 3 providers + embeddings
+- `router_settings` — latency-based routing, 2 retries, 30s cooldown, fallback chains
+- `litellm_settings` — drop unsupported params, JSON logging, request timeout
+- `general_settings` — master key, max parallel requests, health check interval
+
+### How the backend connects
+
+When `LITELLM_ENABLED=true`, `build_chat_model()` in `llm/registry.py` routes ALL providers through a single `ChatOpenAI` pointed at `litellm:4000/v1`, using the LiteLLM master key. `resolve_adk_model()` routes through `LiteLlm` with the proxy's `api_base`. `EmbeddingClient` routes embeddings through the same proxy. When `LITELLM_ENABLED=false`, the original direct-to-provider paths are used — zero behavioral change.
+
+### Admin endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/admin/litellm/models` | List all models the proxy can serve |
+| `GET` | `/admin/litellm/health` | Proxy container health |
+| `POST` | `/admin/litellm/chat` | Test completion through the proxy |
+| `GET` | `/admin/litellm/spend` | Spend tracking logs |
+
 ---
 
 ## Memory system
@@ -423,9 +580,11 @@ Everything lands here: every message, every agent step, every tool call, with a 
 
 The prompt window is a **view** over this (`ShortTermMemory.window()`, default 20 turns). When the thread outgrows the window, older turns are folded into a **rolling summary** stored on the conversation row. Summarisation runs after the turn, never on the request path.
 
-### Long-term — OpenSearch
+### Long-term — OpenSearch or MongoDB
 
 After a turn, a separate LLM pass extracts durable facts (preferences, decisions, constraints) and indexes them with embeddings. In a later conversation sharing no keywords, `recall()` finds them semantically.
+
+The backend follows `VECTOR_BACKEND` — OpenSearch by default, MongoDB when configured. The `LongTermMemory` class dispatches writes, recalls, and deletes to the active backend transparently.
 
 Rules: it runs off the request path (`_post_turn` background task), and most turns extract nothing (the extraction prompt says so explicitly — a memory store that saves everything is one nobody can retrieve from).
 
@@ -440,7 +599,7 @@ upload -> checksum -> MinIO/S3 -> Redis queue -> Celery worker
        -> parse -> chunk -> embed (batched) -> bulk index -> status to Postgres
 ```
 
-The request path does the minimum: checksum the bytes, store them, write a row, enqueue. A `202` means *accepted*, not *searchable*.
+The request path does the minimum: checksum the bytes, store them, write a row, enqueue. A `202` means *accepted*, not *searchable*. The indexing step routes to OpenSearch or MongoDB based on `VECTOR_BACKEND`.
 
 ### Parsers
 

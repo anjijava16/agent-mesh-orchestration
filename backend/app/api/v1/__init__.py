@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin_celery,
+    admin_litellm,
     admin_metrics,
     admin_opensearch,
     admin_postgres,
@@ -28,3 +29,4 @@ api_router.include_router(admin_redis.router)
 api_router.include_router(admin_celery.router)
 api_router.include_router(admin_storage.router)
 api_router.include_router(admin_metrics.router)
+api_router.include_router(admin_litellm.router)

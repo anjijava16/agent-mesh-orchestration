@@ -18,6 +18,8 @@ alembic==1.16.4
 
 # ---- search / vector ----------------------------------------------------
 opensearch-py[async]==2.8.0   # [async] extra pulls aiohttp, needed by AsyncOpenSearch
+motor>=3.6,<4                  # async MongoDB driver for Atlas Vector Search backend
+pymongo>=4.10,<5               # sync MongoDB (Celery workers)
 #duckduckgo-search==8.0.1      # free web search, no API key required
 ddgs>=9,<10 
 # ---- queue / cache ------------------------------------------------------

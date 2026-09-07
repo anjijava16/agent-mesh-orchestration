@@ -40,6 +40,13 @@ class SearchProvider(str, Enum):
     AUTO = "auto"  # Try Tavily first, fall back to DuckDuckGo
 
 
+class VectorBackend(str, Enum):
+    """Which vector store powers RAG retrieval and long-term memory."""
+
+    OPENSEARCH = "opensearch"
+    MONGODB = "mongodb"
+
+
 # Model catalogue. The UI reads this over /api/v1/settings/models so operators
 # can add a model here and have it appear in the picker without a frontend build.
 MODEL_CATALOGUE: dict[ModelProvider, list[dict[str, Any]]] = {
@@ -109,6 +116,21 @@ class OpenSearchSettings(BaseSettings):
     def url(self) -> str:
         scheme = "https" if self.use_ssl else "http"
         return f"{scheme}://{self.host}:{self.port}"
+
+
+class MongoDBSettings(BaseSettings):
+    """MongoDB Atlas Vector Search — alternative vector backend to OpenSearch."""
+
+    model_config = SettingsConfigDict(env_prefix="MONGODB_", extra="ignore")
+
+    uri: str = "mongodb://mongodb:27017"
+    database: str = "agentmesh"
+    documents_collection: str = "document_chunks"
+    memory_collection: str = "longterm_memory"
+    vector_index: str = "vector_index"              # Atlas Search index name
+    text_index: str = "text_index"                  # Atlas Search text index name
+    embedding_dim: int = 1536
+    timeout_ms: int = 30000
 
 
 class RedisSettings(BaseSettings):
@@ -239,6 +261,9 @@ class Settings(BaseSettings):
     search_provider: SearchProvider = SearchProvider.AUTO
     tavily_api_key: str | None = None
 
+    # Vector backend: "opensearch" (default) or "mongodb"
+    vector_backend: VectorBackend = VectorBackend.OPENSEARCH
+
     # Optional tracing
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str | None = None
@@ -260,6 +285,11 @@ class Settings(BaseSettings):
     pinecone_api_key: str = "local-dev-key"
     pinecone_host: str = "http://pinecone:5081"
 
+    # LiteLLM Proxy (model gateway)
+    litellm_enabled: bool = True
+    litellm_base_url: str = "http://litellm:4000"
+    litellm_master_key: str = "sk-agentmesh-local"
+
     @property
     def neo4j_user(self) -> str:
         return self.neo4j_auth.split("/", 1)[0] if "/" in self.neo4j_auth else "neo4j"
@@ -270,6 +300,7 @@ class Settings(BaseSettings):
 
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
+    mongodb: MongoDBSettings = Field(default_factory=MongoDBSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     resilience: ResilienceSettings = Field(default_factory=ResilienceSettings)

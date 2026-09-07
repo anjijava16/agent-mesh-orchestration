@@ -61,6 +61,73 @@ def _progress(session: Session, job_id: uuid.UUID, stage: str, progress: float) 
     session.commit()
 
 
+def _index_to_opensearch(
+    document_id: str, document: Any, chunks: list, vectors: list, now: str,
+) -> tuple[int, int]:
+    """Bulk-index chunks into OpenSearch. Returns (success, error_count)."""
+    actions = [
+        {
+            "_op_type": "index",
+            "_index": settings.opensearch.documents_index,
+            "_id": f"{document_id}:{chunk.index}",
+            "_source": {
+                "document_id": document_id,
+                "chunk_id": f"{document_id}:{chunk.index}",
+                "user_id": document.user_id,
+                "conversation_id": str(document.conversation_id) if document.conversation_id else None,
+                "filename": document.filename,
+                "title": document.filename,
+                "content": chunk.text,
+                "embedding": vector,
+                "page": chunk.page,
+                "chunk_index": chunk.index,
+                "token_count": chunk.token_estimate,
+                "content_type": document.content_type,
+                "tags": (document.meta or {}).get("tags", []),
+                "checksum": document.checksum_sha256,
+                "created_at": now,
+                "metadata": document.meta or {},
+            },
+        }
+        for chunk, vector in zip(chunks, vectors, strict=False)
+    ]
+    client = _os_client()
+    success, errors = helpers.bulk(client, actions, chunk_size=200, request_timeout=120, raise_on_error=False)
+    client.indices.refresh(index=settings.opensearch.documents_index)
+    return int(success), len(errors) if errors else 0
+
+
+def _index_to_mongodb(
+    document_id: str, document: Any, chunks: list, vectors: list, now: str,
+) -> tuple[int, int]:
+    """Bulk-upsert chunks into MongoDB. Returns (success, error_count)."""
+    from app.search.mongo_client import mongo_bulk_index_sync
+
+    documents = [
+        {
+            "_id": f"{document_id}:{chunk.index}",
+            "document_id": document_id,
+            "chunk_id": f"{document_id}:{chunk.index}",
+            "user_id": document.user_id,
+            "conversation_id": str(document.conversation_id) if document.conversation_id else None,
+            "filename": document.filename,
+            "title": document.filename,
+            "content": chunk.text,
+            "embedding": vector,
+            "page": chunk.page,
+            "chunk_index": chunk.index,
+            "token_count": chunk.token_estimate,
+            "content_type": document.content_type,
+            "tags": (document.meta or {}).get("tags", []),
+            "checksum": document.checksum_sha256,
+            "created_at": now,
+            "metadata": document.meta or {},
+        }
+        for chunk, vector in zip(chunks, vectors, strict=False)
+    ]
+    return mongo_bulk_index_sync(settings.mongodb.documents_collection, documents)
+
+
 @celery_app.task(
     bind=True,
     name="app.ingestion.tasks.ingest_document",
@@ -113,43 +180,21 @@ def ingest_document(self: Any, document_id: str, job_id: str) -> dict[str, Any]:
         _progress(session, job_uuid, "indexing", 0.9)
 
         now = datetime.now(UTC).isoformat()
-        actions = [
-            {
-                "_op_type": "index",
-                "_index": settings.opensearch.documents_index,
-                "_id": f"{document_id}:{chunk.index}",   # deterministic => idempotent
-                "_source": {
-                    "document_id": document_id,
-                    "chunk_id": f"{document_id}:{chunk.index}",
-                    "user_id": document.user_id,
-                    "conversation_id": str(document.conversation_id) if document.conversation_id else None,
-                    "filename": document.filename,
-                    "title": document.filename,
-                    "content": chunk.text,
-                    "embedding": vector,
-                    "page": chunk.page,
-                    "chunk_index": chunk.index,
-                    "token_count": chunk.token_estimate,
-                    "content_type": document.content_type,
-                    "tags": (document.meta or {}).get("tags", []),
-                    "checksum": document.checksum_sha256,
-                    "created_at": now,
-                    "metadata": document.meta or {},
-                },
-            }
-            for chunk, vector in zip(chunks, vectors, strict=False)
-        ]
 
-        client = _os_client()
-        success, errors = helpers.bulk(client, actions, chunk_size=200, request_timeout=120, raise_on_error=False)
-        client.indices.refresh(index=settings.opensearch.documents_index)
+        # ---- Index into the configured vector backend ----
+        from app.config import VectorBackend
 
-        if errors:
-            log.warning("bulk_partial_failure", document_id=document_id, failed=len(errors))
+        if settings.vector_backend is VectorBackend.MONGODB:
+            success, err_count = _index_to_mongodb(document_id, document, chunks, vectors, now)
+        else:
+            success, err_count = _index_to_opensearch(document_id, document, chunks, vectors, now)
+
+        if err_count:
+            log.warning("bulk_partial_failure", document_id=document_id, failed=err_count)
 
         _set_status(
             session, doc_uuid, "indexed", chunk_count=int(success),
-            error=f"{len(errors)} chunks failed to index" if errors else None,
+            error=f"{err_count} chunks failed to index" if err_count else None,
         )
         session.execute(
             update(IngestionJob).where(IngestionJob.id == job_uuid).values(
@@ -191,6 +236,14 @@ def ingest_document(self: Any, document_id: str, job_id: str) -> dict[str, Any]:
 @celery_app.task(name="app.ingestion.tasks.purge_document")
 def purge_document(document_id: str) -> dict[str, Any]:
     """Delete every chunk of a document from the index. Called on document delete."""
+    from app.config import VectorBackend
+
+    if settings.vector_backend is VectorBackend.MONGODB:
+        from app.search.mongo_client import get_mongo_sync
+        db = get_mongo_sync()
+        result = db[settings.mongodb.documents_collection].delete_many({"document_id": document_id})
+        return {"deleted": result.deleted_count}
+
     client = _os_client()
     res = client.delete_by_query(
         index=settings.opensearch.documents_index,

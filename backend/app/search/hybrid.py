@@ -148,6 +148,31 @@ async def hybrid_search(
     index: str | None = None,
     rerank: bool = False,
 ) -> list[SearchHit]:
+    from app.config import VectorBackend
+
+    if settings.vector_backend is VectorBackend.MONGODB:
+        return await _hybrid_search_mongodb(
+            query, embedder=embedder, user_id=user_id, document_ids=document_ids,
+            top_k=top_k, collection=index, rerank=rerank,
+        )
+
+    return await _hybrid_search_opensearch(
+        query, embedder=embedder, user_id=user_id, document_ids=document_ids,
+        tags=tags, top_k=top_k, index=index, rerank=rerank,
+    )
+
+
+async def _hybrid_search_opensearch(
+    query: str,
+    *,
+    embedder: Any,
+    user_id: str | None = None,
+    document_ids: Sequence[str] | None = None,
+    tags: Sequence[str] | None = None,
+    top_k: int | None = None,
+    index: str | None = None,
+    rerank: bool = False,
+) -> list[SearchHit]:
     cfg = settings.opensearch
     index = index or cfg.documents_index
     top_k = top_k or cfg.final_top_k
@@ -186,6 +211,70 @@ async def hybrid_search(
         returned=len(fused[:top_k]),
         reranked=rerank,
     )
+    return fused[:top_k]
+
+
+async def _hybrid_search_mongodb(
+    query: str,
+    *,
+    embedder: Any,
+    user_id: str | None = None,
+    document_ids: Sequence[str] | None = None,
+    top_k: int | None = None,
+    collection: str | None = None,
+    rerank: bool = False,
+) -> list[SearchHit]:
+    """Hybrid retrieval using MongoDB Atlas Vector Search + text search."""
+    from app.search.mongo_client import mongo_text_search, mongo_vector_search
+
+    cfg = settings.opensearch  # reuse RRF tuning params
+    collection = collection or settings.mongodb.documents_collection
+    top_k = top_k or cfg.final_top_k
+
+    try:
+        vector = await embedder.embed_query(query)
+    except Exception as exc:
+        log.warning("embedding_failed_text_only_fallback", error=str(exc)[:300])
+        vector = None
+
+    import asyncio
+
+    tasks = [mongo_text_search(collection, query, user_id=user_id, document_ids=document_ids, top_k=cfg.bm25_top_k)]
+    if vector is not None:
+        tasks.append(
+            mongo_vector_search(collection, vector, user_id=user_id, document_ids=document_ids, top_k=cfg.knn_top_k)
+        )
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    text_hits = results[0] if not isinstance(results[0], BaseException) else []
+    vec_hits = results[1] if len(results) > 1 and not isinstance(results[1], BaseException) else []
+
+    if isinstance(results[0], BaseException) and not vec_hits:
+        raise UpstreamError("Both MongoDB retrieval legs failed", details={"error": str(results[0])[:300]})
+
+    # Normalise MongoDB docs into the same shape as OpenSearch hits for RRF.
+    def _to_os_hit(doc: dict) -> dict:
+        doc_id = str(doc.get("_id", doc.get("chunk_id", "")))
+        return {"_id": doc_id, "_source": {
+            "chunk_id": doc.get("chunk_id", doc_id),
+            "document_id": doc.get("document_id", ""),
+            "filename": doc.get("filename", "unknown"),
+            "content": doc.get("content", ""),
+            "page": doc.get("page"),
+            "metadata": doc.get("metadata", {}),
+        }}
+
+    bm25_normalised = [_to_os_hit(d) for d in text_hits]
+    knn_normalised = [_to_os_hit(d) for d in vec_hits]
+
+    fused = reciprocal_rank_fusion(bm25_normalised, knn_normalised, k=cfg.rrf_k,
+                                   top_k=top_k * (3 if rerank else 1))
+
+    if rerank and fused:
+        fused = await _rerank(query, fused, top_k)
+
+    log.info("hybrid_search_mongodb", query_len=len(query), text_hits=len(text_hits),
+             vec_hits=len(vec_hits), returned=len(fused[:top_k]), reranked=rerank)
     return fused[:top_k]
 
 

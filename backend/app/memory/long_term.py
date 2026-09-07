@@ -47,7 +47,13 @@ class LongTermMemory:
 
     @with_resilience(breaker=OPENSEARCH_BREAKER, timeout=20, label="ltm.write")
     async def _index_doc(self, doc_id: str, body: dict[str, Any]) -> None:
-        await get_opensearch().index(index=self.index, id=doc_id, body=body, refresh=False)
+        from app.config import VectorBackend
+
+        if settings.vector_backend is VectorBackend.MONGODB:
+            from app.search.mongo_client import mongo_index_document
+            await mongo_index_document(settings.mongodb.memory_collection, doc_id, body)
+        else:
+            await get_opensearch().index(index=self.index, id=doc_id, body=body, refresh=False)
 
     async def write(
         self,
@@ -93,9 +99,16 @@ class LongTermMemory:
 
     async def recall(self, query: str, *, user_id: str, top_k: int | None = None) -> list[dict[str, Any]]:
         top_k = top_k or settings.agent.long_term_top_k
+        from app.config import VectorBackend
+
+        recall_index = (
+            settings.mongodb.memory_collection
+            if settings.vector_backend is VectorBackend.MONGODB
+            else self.index
+        )
         try:
             hits = await hybrid_search(
-                query, embedder=self.embedder, user_id=user_id, top_k=top_k, index=self.index
+                query, embedder=self.embedder, user_id=user_id, top_k=top_k, index=recall_index
             )
         except Exception as exc:
             log.warning("ltm_recall_failed", error=str(exc)[:300])
@@ -153,6 +166,17 @@ class LongTermMemory:
     async def forget(self, *, user_id: str, memory_id: str | None = None,
                      conversation_id: uuid.UUID | None = None) -> int:
         """Right-to-be-forgotten support. Deletes by id or by whole conversation."""
+        from app.config import VectorBackend
+
+        if settings.vector_backend is VectorBackend.MONGODB:
+            from app.search.mongo_client import mongo_delete_by_filter
+            filter_dict: dict[str, Any] = {"user_id": user_id}
+            if memory_id:
+                filter_dict["memory_id"] = memory_id
+            if conversation_id:
+                filter_dict["conversation_id"] = str(conversation_id)
+            return await mongo_delete_by_filter(settings.mongodb.memory_collection, filter_dict)
+
         client = get_opensearch()
         must: list[dict[str, Any]] = [{"term": {"user_id": user_id}}]
         if memory_id:

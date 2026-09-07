@@ -59,7 +59,17 @@ class ModelSpec:
 
 
 def build_chat_model(spec: ModelSpec | None = None, **overrides: Any) -> Any:
-    """Return a LangChain BaseChatModel. Used by LangGraph and DeepAgents."""
+    """Return a LangChain BaseChatModel. Used by LangGraph and DeepAgents.
+
+    When ``LITELLM_ENABLED=true``, all providers route through the LiteLLM
+    proxy via a single ``ChatOpenAI`` pointed at the proxy's OpenAI-compatible
+    endpoint.  The proxy resolves the model name to the right provider using
+    ``infra/litellm/config.yaml``.  This means swapping a provider is a config
+    change in the proxy, not a code change here.
+
+    When ``LITELLM_ENABLED=false``, the original direct-to-provider path is
+    used, identical to the pre-LiteLLM behaviour.
+    """
     spec = (spec or ModelSpec.from_config()).validate()
     kwargs: dict[str, Any] = {
         "temperature": spec.temperature,
@@ -69,6 +79,20 @@ def build_chat_model(spec: ModelSpec | None = None, **overrides: Any) -> Any:
         **overrides,
     }
 
+    # ---- LiteLLM proxy path ------------------------------------------------
+    if settings.litellm_enabled:
+        from langchain_openai import ChatOpenAI
+
+        log.info("build_chat_model_via_litellm", model=spec.model, provider=spec.provider.value,
+                 proxy=settings.litellm_base_url)
+        return ChatOpenAI(
+            model=spec.model,
+            api_key=settings.litellm_master_key,
+            base_url=f"{settings.litellm_base_url}/v1",
+            **kwargs,
+        )
+
+    # ---- Direct-to-provider path (original behaviour) -----------------------
     if spec.provider is ModelProvider.OPENAI:
         from langchain_openai import ChatOpenAI
 
@@ -87,8 +111,23 @@ def build_chat_model(spec: ModelSpec | None = None, **overrides: Any) -> Any:
 
 
 def resolve_adk_model(spec: ModelSpec | None = None) -> Any:
-    """ADK takes a bare Gemini model string, or a LiteLLM wrapper for everyone else."""
+    """ADK takes a bare Gemini model string, or a LiteLLM wrapper for everyone else.
+
+    When the LiteLLM proxy is enabled, all providers route through LiteLlm
+    pointed at the proxy endpoint.
+    """
     spec = (spec or ModelSpec.from_config()).validate()
+
+    if settings.litellm_enabled:
+        from google.adk.models.lite_llm import LiteLlm
+
+        log.info("resolve_adk_model_via_litellm", model=spec.model, proxy=settings.litellm_base_url)
+        return LiteLlm(
+            model=f"openai/{spec.model}",
+            api_base=f"{settings.litellm_base_url}/v1",
+            api_key=settings.litellm_master_key,
+        )
+
     if spec.provider is ModelProvider.GOOGLE:
         return spec.model
     from google.adk.models.lite_llm import LiteLlm
@@ -108,6 +147,20 @@ class EmbeddingClient:
     def _ensure(self) -> Any:
         if self._client is not None:
             return self._client
+
+        # When LiteLLM proxy is enabled, route embeddings through it too.
+        if settings.litellm_enabled:
+            from langchain_openai import OpenAIEmbeddings
+
+            log.info("embedding_via_litellm", model=self.model, proxy=settings.litellm_base_url)
+            self._client = OpenAIEmbeddings(
+                model=self.model,
+                api_key=settings.litellm_master_key,
+                base_url=f"{settings.litellm_base_url}/v1",
+                max_retries=0,
+            )
+            return self._client
+
         if self.provider is ModelProvider.OPENAI:
             from langchain_openai import OpenAIEmbeddings
 

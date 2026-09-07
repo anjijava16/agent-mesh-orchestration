@@ -52,6 +52,16 @@ x-backend-env: &backend-env
   TAVILY_API_KEY: ${TAVILY_API_KEY:-}
   SEARCH_PROVIDER: ${SEARCH_PROVIDER:-auto}
 
+  # LiteLLM Proxy (model gateway)
+  LITELLM_ENABLED: ${LITELLM_ENABLED:-true}
+  LITELLM_BASE_URL: http://litellm:4000
+  LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-agentmesh-local}
+
+  # MongoDB (alternative vector backend)
+  VECTOR_BACKEND: ${VECTOR_BACKEND:-opensearch}
+  MONGODB_URI: mongodb://mongodb:27017
+  MONGODB_DATABASE: agentmesh
+
   # Arize Phoenix (AI Observability)
   PHOENIX_ENABLED: ${PHOENIX_ENABLED:-true}
   PHOENIX_HOST: phoenix
@@ -170,6 +180,31 @@ services:
       echo 'bucket ready'
       "
 
+  # ---- LLM Gateway: LiteLLM Proxy -----------------------------------------
+  # Single egress point for all model traffic. Routes to OpenAI, Anthropic,
+  # Google through one gateway with latency-based routing, fallbacks, spend
+  # tracking, and unified logging. UI at http://localhost:4000/ui.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: agentmesh-litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-agentmesh-local}
+      STORE_MODEL_IN_DB: "false"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    ports: ["4000:4000"]
+    volumes:
+      - ./infra/litellm/config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -184,6 +219,7 @@ services:
       redis: { condition: service_healthy }
       opensearch: { condition: service_healthy }
       minio: { condition: service_healthy }
+      litellm: { condition: service_healthy }
       phoenix: { condition: service_healthy }
       neo4j: { condition: service_healthy }
     healthcheck:
@@ -308,6 +344,25 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+
+  # ---- Document Database: MongoDB ------------------------------------------
+  # Alternative vector backend to OpenSearch. Set VECTOR_BACKEND=mongodb to use.
+  # Locally runs as a standalone replica set so Atlas Vector Search $vectorSearch
+  # aggregation stages work. In production, use MongoDB Atlas.
+  mongodb:
+    image: mongo:7
+    container_name: agentmesh-mongodb
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports: ["27017:27017"]
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "try{rs.status()}catch(e){rs.initiate()}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     restart: unless-stopped
 
   # ---- AI Observability: Opik (Comet) ---------------------------------------
@@ -490,6 +545,7 @@ volumes:
   miniodata:
   neo4jdata:
   neo4jlogs:
+  mongodata:
   # opik-mysql:
   # opik-redis:
   # opik-zookeeper:

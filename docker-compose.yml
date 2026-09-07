@@ -185,24 +185,23 @@ services:
   # Google through one gateway with latency-based routing, fallbacks, spend
   # tracking, and unified logging. UI at http://localhost:4000/ui.
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    image: ghcr.io/berriai/litellm:main-v1.72.6-stable
     container_name: agentmesh-litellm
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-agentmesh-local}
-      STORE_MODEL_IN_DB: "false"
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-placeholder}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-placeholder}
     ports: ["4000:4000"]
     volumes:
       - ./infra/litellm/config.yaml:/app/config.yaml:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:4000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4000/health/liveliness || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 15
+      start_period: 45s
     restart: unless-stopped
 
   backend:

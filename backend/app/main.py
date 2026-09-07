@@ -21,6 +21,7 @@ from app.config import settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import CorrelationMiddleware, RateLimitMiddleware
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.tracing import setup_tracing
 from app.db.session import dispose_engine
 from app.search.client import close_opensearch
@@ -83,6 +84,12 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.api_prefix)
+
+# slowapi: per-endpoint rate limiting (complements the global RateLimitMiddleware)
+from slowapi.errors import RateLimitExceeded
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 @app.exception_handler(AppError)

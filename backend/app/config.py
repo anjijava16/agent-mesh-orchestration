@@ -176,6 +176,12 @@ class ResilienceSettings(BaseSettings):
     tool_timeout_seconds: float = 30.0
     search_timeout_seconds: float = 15.0
 
+    # Rate limiting (slowapi per-endpoint defaults)
+    rate_limit_default: int = 240          # requests per minute, global default
+    rate_limit_chat: str = "30/minute"     # chat endpoints (expensive LLM calls)
+    rate_limit_upload: str = "20/minute"   # file upload
+    rate_limit_search: str = "60/minute"   # search / read-heavy endpoints
+
 
 class AgentSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AGENT_", extra="ignore")

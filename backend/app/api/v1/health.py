@@ -16,6 +16,7 @@ from sqlalchemy import text
 from app.agents.registry import available_frameworks
 from app.config import settings
 from app.core.resilience import CircuitBreaker
+from app.core.resilience_ext import pybreaker_snapshot
 from app.db.session import get_sessionmaker
 from app.search.client import get_opensearch
 
@@ -84,8 +85,11 @@ async def health() -> dict:
     names = ("postgres", "opensearch", "redis", "object_storage")
     dependencies = dict(zip(names, checks, strict=True))
     breakers = CircuitBreaker.snapshot()
+    pb_breakers = pybreaker_snapshot()
     degraded = any(c["status"] == "down" for c in checks) or any(
         b["state"] == "open" for b in breakers.values()
+    ) or any(
+        b["state"] == "open" for b in pb_breakers.values()
     )
     return {
         "status": "degraded" if degraded else "healthy",
@@ -93,5 +97,6 @@ async def health() -> dict:
         "environment": settings.environment,
         "dependencies": dependencies,
         "breakers": breakers,
+        "pybreakers": pb_breakers,
         "frameworks": available_frameworks(),
     }

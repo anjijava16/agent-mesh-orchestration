@@ -20,7 +20,9 @@ from app.agents.definitions import roster
 from app.agents.registry import available_frameworks
 from app.agents.service import ChatService
 from app.api.deps import CurrentUser, DbSession, RequestId
+from app.config import settings
 from app.core.logging import conversation_id_ctx, get_logger
+from app.core.rate_limit import limiter
 from app.db.repositories import AgentRunRepository, ConversationRepository, MessageRepository
 from app.schemas.chat import (
     AgentRunOut,
@@ -42,6 +44,7 @@ def _sse(payload: dict) -> str:
 
 
 @router.post("/chat/stream")
+@limiter.limit(settings.resilience.rate_limit_chat)
 async def chat_stream(
     body: ChatRequest,
     session: DbSession,
@@ -107,6 +110,7 @@ async def chat_stream(
 
 
 @router.post("/chat")
+@limiter.limit(settings.resilience.rate_limit_chat)
 async def chat_once(body: ChatRequest, session: DbSession, user: CurrentUser, req_id: RequestId) -> dict:
     """Non-streaming variant for scripts and evaluation harnesses."""
     service = ChatService(session)

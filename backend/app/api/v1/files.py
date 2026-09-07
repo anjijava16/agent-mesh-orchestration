@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession, RequestId
 from app.config import settings
 from app.core.logging import get_logger
+from app.core.rate_limit import limiter
 from app.db.repositories import AuditRepository, DocumentRepository
 from app.ingestion.tasks import ingest_document, purge_document
 from app.llm.registry import get_embedder
@@ -28,7 +29,9 @@ ALLOWED_SUFFIXES = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv", ".xlsx", ".x
 
 
 @router.post("/files", response_model=DocumentOut, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(settings.resilience.rate_limit_upload)
 async def upload_file(
+    request: Request,
     session: DbSession,
     user: CurrentUser,
     req_id: RequestId,
@@ -151,7 +154,8 @@ async def reingest(document_id: uuid.UUID, session: DbSession, user: CurrentUser
 
 
 @router.post("/search")
-async def search(body: SearchRequest, user: CurrentUser) -> dict:
+@limiter.limit(settings.resilience.rate_limit_search)
+async def search(request: Request, body: SearchRequest, user: CurrentUser) -> dict:
     """Direct hybrid search, outside of any agent. Useful for debugging retrieval."""
     hits = await hybrid_search(
         body.query,

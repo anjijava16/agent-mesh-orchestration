@@ -14,6 +14,7 @@ from app.config import MODEL_CATALOGUE, ModelProvider, settings
 from app.core.errors import ValidationError
 from app.core.logging import get_logger
 from app.core.resilience import EMBEDDING_BREAKER, LLM_BREAKERS, with_resilience
+from app.core.resilience_ext import pb_llm_breakers, with_tenacity_resilience
 
 log = get_logger(__name__)
 
@@ -151,6 +152,29 @@ def get_embedder() -> EmbeddingClient:
 
 def llm_breaker(spec: ModelSpec) -> Any:
     return LLM_BREAKERS[spec.breaker_key]
+
+
+async def resilient_ainvoke(model: Any, messages: Any, *, spec: ModelSpec | None = None) -> Any:
+    """Invoke a LangChain chat model with tenacity retry + pybreaker protection.
+
+    Use this when calling ``model.ainvoke()`` from runtime code that doesn't
+    already go through the custom ``@with_resilience`` decorator.  It gives
+    each LLM invocation exponential-backoff retries and circuit-breaker
+    protection through the industry-standard libraries.
+    """
+    _spec = spec or ModelSpec.from_config()
+    breaker_key = _spec.breaker_key
+    pb_breaker = pb_llm_breakers.get(breaker_key)
+
+    @with_tenacity_resilience(
+        breaker=pb_breaker,
+        timeout=settings.resilience.llm_timeout_seconds,
+        label=f"llm.ainvoke.{breaker_key}",
+    )
+    async def _invoke() -> Any:
+        return await model.ainvoke(messages)
+
+    return await _invoke()
 
 
 def catalogue() -> dict[str, Any]:

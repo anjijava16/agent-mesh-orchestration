@@ -1,74 +1,112 @@
 # AgentMesh
 
-A production-shaped multi-agent platform where the orchestration framework is a
-runtime setting, not an architectural commitment.
-
-Five specialist agents — researcher, retriever, analyst, compliance reviewer,
-writer — run under any of four orchestration frameworks. The agents, their
-prompts, their tools, the memory model and the API contract stay identical
-across all four. You change a dropdown and the same team runs on different
-machinery.
+A production-grade multi-agent orchestration platform where the framework is a runtime setting, not an architectural commitment. Seven interchangeable agent runtimes, five specialist agents, eight tools, hybrid RAG, dual-layer memory, a full ingestion pipeline, and the resilience stack a production system actually needs — circuit breakers, retries, rate limiting, structured observability — all running behind a single event contract that the React console, the database and the API never learn to distinguish.
 
 ```
-React console  ──▶  FastAPI  ──▶  Agent runtime  ──▶  ┌ Google ADK workflows
-   (SSE)                                              ├ LangGraph supervisor
-                                                      ├ LangChain DeepAgents
-                                                      └ Claude Agent SDK
+React console  ──>  FastAPI  ──>  Agent runtime  ──>  ┌ Google ADK (declarative pipeline)
+   (SSE)              |                               ├ Google ADK (graph Workflow)
+                      |                               ├ LangGraph (supervisor graph)
+                      |                               ├ LangChain DeepAgents (planning-first)
+                      |                               ├ Claude Agent SDK (MCP tools)
+                      |                               ├ Microsoft Agent Framework (GroupChat)
+                      |                               └ AWS Strands Agents (Swarm)
 ```
 
 ---
 
 ## Table of contents
 
+- [Tech stack](#tech-stack)
 - [Why this exists](#why-this-exists)
 - [Quickstart](#quickstart)
-- [Architecture](#architecture)
-- [The four runtimes](#the-four-runtimes)
+- [Architecture deep dive](#architecture-deep-dive)
+- [The seven runtimes](#the-seven-runtimes)
 - [The five agents and their tools](#the-five-agents-and-their-tools)
-- [Memory](#memory)
-- [Hybrid search](#hybrid-search)
-- [Resilience: retry and circuit breaking](#resilience-retry-and-circuit-breaking)
-- [Document ingestion](#document-ingestion)
-- [Streaming](#streaming)
-- [The UI](#the-ui)
+- [Resilience engineering](#resilience-engineering)
+- [Hybrid RAG retrieval](#hybrid-rag-retrieval)
+- [Memory system](#memory-system)
+- [Document ingestion pipeline](#document-ingestion-pipeline)
+- [Observability stack](#observability-stack)
+- [Streaming protocol](#streaming-protocol)
+- [The frontend](#the-frontend)
+- [Database schema](#database-schema)
 - [API reference](#api-reference)
 - [Configuration reference](#configuration-reference)
 - [Project layout](#project-layout)
-- [Running it in production](#running-it-in-production)
-- [Troubleshooting](#troubleshooting)
+- [Running in production](#running-in-production)
 - [Extending it](#extending-it)
+
+---
+
+## Tech stack
+
+| Layer | Tool | Role in AgentMesh |
+|---|---|---|
+| API framework | **FastAPI** | Async HTTP server, SSE streaming, OpenAPI docs, Pydantic validation |
+| Graph orchestration | **LangGraph** | Default runtime: explicit `StateGraph` with structured-output supervisor and parallel fan-out |
+| Declarative orchestration | **Google ADK 2.x** | Two runtimes: `SequentialAgent`/`ParallelAgent`/`LoopAgent` pipeline + graph `Workflow` with `JoinNode` and HITL gates |
+| Planning-first orchestration | **LangChain DeepAgents** | Open-ended research: virtual filesystem, subagent spawning, todo/planning tools |
+| Claude-native orchestration | **Claude Agent SDK** | In-process MCP server, programmatic subagents, Anthropic context management |
+| GroupChat orchestration | **Microsoft Agent Framework** | Round-robin `GroupChat` with custom `BaseChatClient` wrapping OpenAI 1.x SDK |
+| Swarm orchestration | **AWS Strands Agents** | `Swarm` with `LiteLLMModel`, shared context, autonomous handoffs between specialists |
+| LLM providers | **OpenAI** / **Anthropic** / **Google GenAI** | Claude Sonnet 4.6, GPT-4.1, Gemini 2.5 Pro (configurable per request) |
+| LLM routing | **LiteLLM** | Unified `provider/model` format for ADK, Strands, and MS Agent runtimes |
+| Embeddings | **OpenAI text-embedding-3-small** | Default embedding model for RAG and long-term memory (via `langchain-openai`) |
+| RAG retrieval | **OpenSearch 2.17** | Hybrid BM25 + kNN (HNSW/Lucene) fused by Reciprocal Rank Fusion |
+| Reranking | **sentence-transformers** (`ms-marco-MiniLM-L-6-v2`) | Optional cross-encoder reranking on the fused head |
+| Short-term memory | **PostgreSQL 16** + **SQLAlchemy asyncio** + **asyncpg** | Full conversation transcript, agent steps, rolling summary |
+| Long-term memory | **OpenSearch** (semantic index) | LLM-extracted durable facts, embedded for cross-conversation recall |
+| Session memory | **ADK DatabaseSessionService** + **Postgres** | ADK session persistence (declarative pipeline + graph workflow runtimes) |
+| Task queue | **Celery 5.5** + **Redis 7** | Document ingestion workers with `acks_late`, deterministic chunk ids, backoff retries |
+| Object storage | **MinIO** / **S3** (via **boto3**) | Uploaded documents, presigned download URLs |
+| Database ORM | **SQLAlchemy 2.0** (async) + **Alembic** | 9 models, async repositories, JSONB with GIN indexes, migration chain |
+| Auth | **Header-based** (`X-User-ID`) | Seam for JWT/OIDC; everything downstream takes a user id string |
+| Rate limiting (global) | **Custom sliding-window middleware** | Per-user, in-process, skips health/docs paths |
+| Rate limiting (per-endpoint) | **slowapi** | Granular limits: chat 30/min, uploads 20/min, search 60/min |
+| Retries (custom) | **Custom `retry_async`** | Exponential backoff with full jitter, `is_retryable()` classification |
+| Retries (industry) | **tenacity** | `AsyncRetrying` with `wait_exponential_jitter`, composable decorators |
+| Circuit breaking (custom) | **Custom `CircuitBreaker`** | Async three-state (closed/open/half-open), capped half-open probes, introspectable via `/health` |
+| Circuit breaking (industry) | **pybreaker** | Standard three-state breakers with `_PybreakerListener` for structured logging |
+| Bulkhead | **Custom `Bulkhead`** | `asyncio.Semaphore`-based concurrency cap per dependency |
+| PII scanning | **Regex-based `pii_scan` tool** | Email, SSN, phone, credit card, IP, IBAN detection + redaction |
+| Policy compliance | **`policy_lookup` tool** | Citation, PII, financial advice, uncertainty, retention rules |
+| Web search | **Tavily** + **DuckDuckGo** (`ddgs`) | Auto mode: try Tavily first, fall back to DuckDuckGo (no API key needed) |
+| MCP integration | **mcp** SDK + **fastmcp** + **langchain-mcp-adapters** | Claude SDK in-process MCP server for tool exposure |
+| HTTP client | **httpx** | Async HTTP for Tavily, provider APIs, outgoing requests |
+| Observability (LLM) | **Arize Phoenix** (OTLP gRPC) | Traces every LLM call, tool invocation, and agent handoff via OpenInference spans |
+| Observability (alt) | **Opik** (Comet) | Parallel tracing: OpenAI, LiteLLM, LangChain callbacks to self-hosted Opik |
+| Observability (OTEL) | **OpenTelemetry SDK** | `BatchSpanProcessor` to Phoenix; instruments FastAPI, httpx, OpenAI, Anthropic, LiteLLM, GenAI, ADK, Bedrock, LangChain |
+| Observability (app) | **structlog** | JSON-structured logging with `request_id`, `conversation_id`, `user_id` from contextvars |
+| Metrics | **prometheus-client** | Prometheus-format metrics endpoint |
+| Graph database | **Neo4j 5** | Connection configured, driver in requirements (knowledge graph integration point) |
+| Vector database | **Pinecone Local** | In-memory emulator for local dev; `langchain-pinecone` for notebook experiments |
+| Document parsing | **pypdf** + **python-docx** + **openpyxl** + **beautifulsoup4** | PDF (+ OCR via tesseract), DOCX, XLSX, CSV, HTML, JSON, Markdown |
+| Chunking | **Custom recursive splitter** | Structural boundaries (`## `, `# `, paragraph, sentence), page-aware, configurable overlap |
+| Frontend framework | **React 18** + **Vite** | Three-pane console: threads rail, transcript + composer, inspector (Trace/Config/Files) |
+| Frontend streaming | **fetch + ReadableStream** | SSE reader (not EventSource, because POST body + custom headers are needed) |
+| Container runtime | **Docker Compose v2** | 10+ services with healthchecks, dependency ordering, named volumes |
+| Reverse proxy | **nginx** | Frontend static files, SSE proxy with `proxy_buffering off` |
 
 ---
 
 ## Why this exists
 
-Most multi-agent codebases marry one framework. The framework's session object
-becomes the conversation, its event type becomes the API contract, its state
-model becomes the schema. Switching later means a rewrite, and comparing two
-frameworks honestly means building the same thing twice.
+Most multi-agent codebases marry one framework. The framework's session object becomes the conversation, its event type becomes the API contract, its state model becomes the schema. Switching later means a rewrite, and comparing two frameworks honestly means building the same thing twice.
 
-This one puts a single event contract in the middle. `app/agents/base.py`
-defines the vocabulary — `plan`, `agent_started`, `tool_call`, `tool_result`,
-`token`, `citation`, `handoff`, `usage`, `error`, `run_finished` — and each
-framework adapter translates into it. Everything above the adapter (the API, the
-database, the React client) sees one stream and never learns which runtime ran.
+AgentMesh puts a single event contract in the middle. `app/agents/base.py` defines the vocabulary — `plan`, `agent_started`, `tool_call`, `tool_result`, `token`, `citation`, `handoff`, `usage`, `error`, `run_finished` — and each framework adapter translates into it. Everything above the adapter (the API, the database, the React client) sees one stream and never learns which runtime ran.
 
-Two things follow from that:
+Two things follow:
 
-- You can A/B two frameworks on the same question, with the same prompts and the
-  same tools, and the difference you measure is the framework.
-- Adding a fifth means implementing one class. Nothing else changes.
+- You can A/B two frameworks on the same question, with the same prompts and the same tools, and the difference you measure is the framework.
+- Adding an eighth means implementing one class. Nothing else changes.
 
-The rest of the stack — Postgres, OpenSearch, Redis/Celery, MinIO, circuit
-breakers, an audit trail — is what makes the comparison meaningful under load
-rather than a demo.
+The rest of the stack — Postgres, OpenSearch, Redis/Celery, MinIO, circuit breakers, an audit trail, dual observability platforms — is what makes the comparison meaningful under load rather than a demo.
 
 ---
 
 ## Quickstart
 
-**You need:** Docker with Compose v2, about 6 GB of free RAM (OpenSearch takes
-most of it), and at least one model provider API key.
+**You need:** Docker with Compose v2, about 6 GB of free RAM (OpenSearch takes most of it), and at least one model provider API key.
 
 ```bash
 cp .env.example .env
@@ -79,427 +117,387 @@ cp .env.example .env
 make up
 ```
 
-`make up` builds the images, waits for the backend to report healthy, and runs
-the migrations. Then:
+`make up` builds the images, waits for the backend to report healthy, and runs the migrations. Then:
 
 | What | Where |
 |---|---|
 | Console | http://localhost:8080 |
 | API docs | http://localhost:8000/docs |
+| Phoenix UI | http://localhost:6006 |
 | MinIO console | http://localhost:9001 (`minioadmin` / `minioadmin`) |
-| Flower (`make tools`) | http://localhost:5555 |
-| OpenSearch Dashboards (`make tools`) | http://localhost:5601 |
+| Neo4j Browser | http://localhost:7474 |
+| OpenSearch Dashboards | http://localhost:5601 (run `make tools`) |
+| Flower | http://localhost:5555 (run `make tools`) |
 
-Load a sample document and verify the whole path end to end:
+Verify end to end:
 
 ```bash
-make seed     # uploads a document, waits for it to index
+make seed     # uploads a sample document, waits for it to index
 make smoke    # checks health, dependencies, frameworks, and a live chat turn
 ```
-
-Then ask the console something the sample document answers — *"what caused the
-Sev-1 incidents last quarter?"* — and watch the Trace panel while the retriever
-runs.
 
 ### Without Docker
 
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 # Point POSTGRES_HOST / OPENSEARCH_HOST / REDIS_HOST at your own services.
 alembic upgrade head
 uvicorn app.main:app --reload
 
-# Worker, separate terminal:
+# Worker (separate terminal):
 celery -A app.ingestion.celery_app.celery_app worker -Q ingest,default --loglevel=INFO
 
-# UI, third terminal:
+# UI (third terminal):
 cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
 ---
 
-## Architecture
+## Architecture deep dive
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  React console (Vite + nginx)                                            │
-│  threads rail │ transcript + composer │ inspector: trace / config / files │
-└───────────────────────────────┬──────────────────────────────────────────┘
-                                │  SSE  (POST /api/v1/chat/stream)
-┌───────────────────────────────▼──────────────────────────────────────────┐
-│  FastAPI                                                                 │
-│  middleware: correlation id · rate limit · error shaping                 │
-│  routes: chat · conversations · runs · settings · files · search · audit │
-│                              ChatService                                 │
-│      resolve config → assemble memory → open run → stream → persist      │
-└───┬────────────────────────────┬───────────────────────────┬─────────────┘
-    │                            │                           │
-┌───▼──────────────┐   ┌─────────▼──────────┐   ┌────────────▼─────────────┐
-│ Agent runtime    │   │ Memory             │   │ Retrieval                │
-│ ADK │ LangGraph  │   │ short: Postgres    │   │ BM25 ∥ kNN → RRF → rerank│
-│ DeepAgents │ SDK │   │ long:  OpenSearch  │   │ OpenSearch               │
-└───┬──────────────┘   └─────────┬──────────┘   └────────────┬─────────────┘
-    │ 8 tools, each with a breaker and a timeout             │
-    └────────────────────────────┴────────────────────────────┘
-                                 │
-┌────────────────────────────────▼─────────────────────────────────────────┐
-│ Postgres        OpenSearch        Redis + Celery        MinIO / S3       │
-│ transcripts     chunks + memory   ingestion queue       uploaded files   │
-│ runs, steps     hybrid indices    2 queues, retries     presigned URLs   │
-│ settings, audit                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  React console (Vite + nginx)                                               │
+│  threads rail  |  transcript + composer  |  inspector: Trace / Config / Files│
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │  SSE  (POST /api/v1/chat/stream)
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│  FastAPI                                                                    │
+│  middleware: CorrelationMiddleware -> RateLimitMiddleware -> slowapi -> GZip │
+│  routes: chat . conversations . runs . settings . files . search . audit    │
+│                               ChatService                                   │
+│       resolve config -> assemble memory -> open run -> stream -> persist     │
+└────┬─────────────────────────────┬────────────────────────────┬─────────────┘
+     │                             │                            │
+┌────▼───────────────┐   ┌────────▼───────────┐   ┌────────────▼──────────────┐
+│ Agent runtime      │   │ Memory             │   │ Retrieval                 │
+│ ADK pipeline       │   │ short: Postgres    │   │ BM25 || kNN -> RRF        │
+│ ADK workflow       │   │ long:  OpenSearch  │   │ (optional cross-encoder   │
+│ LangGraph          │   │ summary: rolling   │   │  reranking)               │
+│ DeepAgents         │   └────────────────────┘   │ OpenSearch                │
+│ Claude SDK         │                            └───────────────────────────┘
+│ MS Agent Framework │
+│ Strands Agents     │
+└────┬───────────────┘
+     │ 8 tools, each with a breaker and a timeout
+     │
+┌────▼────────────────────────────────────────────────────────────────────────┐
+│ Infrastructure                                                              │
+│ PostgreSQL 16   OpenSearch 2.17   Redis 7 + Celery   MinIO / S3            │
+│ (transcripts,   (chunks, memory,  (ingestion queue,  (uploaded files,      │
+│  runs, steps,    hybrid indices)   2 queues, retries)  presigned URLs)      │
+│  settings,                                                                  │
+│  audit logs)                                                                │
+│                                                                             │
+│ Arize Phoenix (OTLP)   Opik (Comet)   Neo4j   Pinecone Local              │
+│ (LLM traces, spans)    (alt traces)   (graph)  (vector experiments)        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### The lifecycle of one turn
 
-1. `POST /api/v1/chat/stream` arrives. Middleware assigns a request id and binds
-   it to the logging context for everything that follows.
-2. `ChatService.resolve_config` merges three sources, in precedence order:
-   **request body → the user's saved settings → the defaults in `config.py`**.
-3. The conversation is created or loaded. The user's message is written to
-   Postgres *before* any model is called, so a crashed run still leaves a record
-   of what was asked.
-4. Memory is assembled: the last N turns from Postgres, the running summary, and
-   — if enabled — semantically recalled long-term memories from OpenSearch.
-5. An `agent_runs` row is opened and **committed immediately**. If the process
-   dies mid-stream, the run is still visible with status `running` rather than
-   vanishing.
-6. The selected runtime streams `AgentEvent`s. The service forwards each one to
-   the client as SSE while collecting text, citations, tool steps and usage.
-7. When the stream closes, everything is persisted in a *fresh* session — the
-   request session may have been rolled back by whatever failed.
-8. `_post_turn` fires as a background task: roll the summary forward if the
-   thread is long, distil durable facts into long-term memory. The user is
-   already reading the answer by this point.
+1. `POST /api/v1/chat/stream` arrives. `CorrelationMiddleware` assigns a request id and binds it to structlog's contextvars. `RateLimitMiddleware` (custom sliding-window) and slowapi (per-endpoint) both gate the request.
+
+2. `ChatService.resolve_config` merges three sources in precedence order: **request body > user's saved settings > defaults in config.py**. This is how a user can change framework, model, temperature, or active agents per request.
+
+3. The conversation is created or loaded. The user's message is written to Postgres **before any model is called**, so a crashed run still leaves a record of what was asked.
+
+4. Memory is assembled:
+   - Last N turns from Postgres (`ShortTermMemory.window()`, default 20)
+   - Rolling summary if the thread outgrew the window
+   - Semantically recalled long-term memories from OpenSearch (if enabled)
+
+5. An `agent_runs` row is opened and **committed immediately**. If the process dies mid-stream, the run is still visible with status `running` rather than vanishing silently.
+
+6. `get_runtime(framework)` returns the cached adapter. The runtime's `stream()` yields `AgentEvent`s. The service forwards each one to the client as SSE while collecting text, citations, tool steps, and usage.
+
+7. When the stream closes, everything is persisted in a **fresh session** — the request session may have been rolled back by whatever failed. Steps, the assistant message, usage, and citations all land in Postgres.
+
+8. `_post_turn` fires as a background task: roll the summary forward if the thread is long, distil durable facts into long-term memory via an LLM extraction pass. The user is already reading the answer.
+
+9. If Phoenix or Opik tracing is enabled, every LLM call, tool invocation, and agent handoff has already been recorded as OpenTelemetry spans or Opik traces in real time.
+
+### Data flow through the resilience stack
+
+Every external call follows this path:
+
+```
+caller -> tenacity retry (exponential backoff + jitter)
+            -> pybreaker gate (three-state circuit breaker)
+                -> asyncio.wait_for (per-attempt timeout)
+                    -> actual call (LLM / OpenSearch / S3 / Tavily / DuckDuckGo)
+```
+
+The custom resilience primitives (`resilience.py`) run the same composition: `retry_async -> CircuitBreaker.call -> asyncio.wait_for`. Both systems operate in parallel — the custom breakers provide async-native half-open probe semantics and feed `/health`, while tenacity + pybreaker provide the industry-standard libraries that ops teams already know.
 
 ---
 
-## The four runtimes
+## The seven runtimes
 
-All four get the same five agents, the same eight tools, the same prompts and
-the same memory block. They differ in how orchestration is expressed.
+All seven get the same five agents, the same eight tools, the same prompts, and the same memory block. They differ only in how orchestration is expressed.
 
-### LangGraph — explicit supervisor graph (default)
+### 1. LangGraph — explicit supervisor graph (default)
 
 ```
-START → supervisor ─┬→ researcher ─┐
-                    ├→ retriever  ─┴→ fan_in → supervisor
-                    ├→ analyst ───────────────→ supervisor
-                    ├→ compliance ────────────→ supervisor
-                    └→ writer ────────────────→ END
+START -> supervisor -+-> researcher -+
+                     +-> retriever  -+-> fan_in -> supervisor
+                     +-> analyst -----------------> supervisor
+                     +-> compliance --------------> supervisor
+                     +-> writer ------------------> END
 ```
 
-The supervisor is a real node using structured output, not a prompt that decides
-in free text. It returns a typed `Route` object. Structured routing is the
-difference between a graph you can unit-test and one you can only observe.
+The supervisor uses structured output (`Route` Pydantic model), not free text. `researcher` and `retriever` fan out in parallel. Each specialist runs a tool loop bounded at 3 passes. Every `tool_call` id gets a matching `tool` message — dangling ids cause the next provider call to reject the whole conversation.
 
-`researcher` and `retriever` fan out in parallel and rejoin at `fan_in`, then
-control returns to the supervisor for the next decision. Each specialist runs a
-tool loop bounded at three passes — an unbounded loop here is how agent systems
-burn a budget overnight.
-
-**Use it when** you know the shape of the work and want it to be inspectable and
-deterministic. This is the right default for most production work.
-
-### Google ADK — declarative workflow agents (ADK 2.x)
+### 2. Google ADK — declarative pipeline (ADK 2.x)
 
 ```
 SequentialAgent "agentmesh_pipeline"
-  1. ParallelAgent "discovery"    → researcher ∥ retriever
+  1. ParallelAgent "discovery"    -> researcher || retriever
   2. LlmAgent      "analyst"
-  3. LoopAgent     "review_cycle" → compliance → writer   (max 2 iterations)
+  3. LoopAgent     "review_cycle" -> compliance -> writer  (max 2 iterations)
 ```
 
-ADK's distinguishing idea is that orchestration is *composed*, not coded. State
-moves between agents through `output_key`: each agent writes its result into
-session state under a name, and the next agent's instruction interpolates it with
-`{research_findings?}` templating. The `?` makes it optional, so a disabled agent
-leaves a blank rather than an error.
+State flows through `output_key`: each agent writes to a named key, the next reads via `{key?}` templating. The `LoopAgent` terminates early when compliance calls `exit_review`. Sessions persist through ADK's `DatabaseSessionService` on Postgres, with in-memory fallback.
 
-The `LoopAgent` terminates early when compliance signals the draft passes,
-instead of always burning both iterations.
+### 3. Google ADK — graph Workflow
 
-Sessions persist through ADK 2.x's `DatabaseSessionService` pointed at the same
-Postgres instance (in its own `adk` schema), with an in-memory fallback if that
-is unavailable — degraded, not broken.
+```
+START -+-> researcher -+
+       +-> retriever  -+-> JoinNode -> classify_and_route
+       +-> analyst    -+                    |
+                          +------+----------+--------+-------------+
+                        "tech"  "billing" "compliance"  "general"
+                          |        |           |            |
+                   troubleshoot  billing   compliance    writer
+                   (loop via     agent     agent        agent
+                    ctx.run_node)  |
+                                hitl_gate
+```
 
-**Use it when** the pipeline is stable and you want it declared rather than
-implemented. The declarative form is genuinely easier to review.
+Explicit graph with `JoinNode` for parallel fan-out fusion, conditional routing based on session state, dynamic troubleshooting loops, and HITL (human-in-the-loop) gates where missing approval pauses the workflow.
 
-### LangChain DeepAgents — planning-first
+### 4. LangChain DeepAgents — planning-first
 
-The opposite philosophy. Instead of declaring the workflow, you give one capable
-agent a planning tool, a virtual filesystem and a roster of subagents, and let it
-decide. Our five specialists become declarative subagent specs; the main agent
-gets the orchestrator instruction and the `task` tool that spawns them.
+The opposite philosophy. One capable agent gets a planning tool, a virtual filesystem, and a roster of subagents. It decides the workflow at runtime. Long intermediate material gets written to a file instead of carried in context, which prevents window exhaustion on long research runs.
 
-The virtual filesystem matters more than it sounds: long intermediate material
-gets written to a file instead of carried in context, which is what keeps a
-long research run from filling the window.
+### 5. Claude Agent SDK — Anthropic's harness
 
-**Use it when** the shape of the work is not known in advance — open-ended
-research, exploratory analysis. It is less predictable than the graph, which is
-the point.
+Uses `ClaudeSDKClient` with `ClaudeAgentOptions`. Our tools are exposed through an **in-process MCP server** (`create_sdk_mcp_server`) — no subprocess, no IPC, tool calls land directly in the FastAPI event loop. The five specialists become programmatic subagents. This runtime talks to Claude models only.
 
-### Claude Agent SDK — Anthropic's harness
+### 6. Microsoft Agent Framework — GroupChat
 
-Uses `ClaudeSDKClient` with `ClaudeAgentOptions`, and exposes our tools through
-an **in-process MCP server** (`create_sdk_mcp_server`). In-process means no
-subprocess and no IPC — a tool call lands directly in the FastAPI event loop.
+All specialists sit in a shared transcript and iteratively refine each other's work until Writer produces a final answer or the round cap is hit. Uses a custom `BaseChatClient` wrapping the OpenAI 1.x SDK; for Anthropic/Google it routes through LiteLLM's OpenAI-compatibility layer. Tool results are pre-executed and injected as context.
 
-The five specialists become programmatic subagents via the `agents` option, each
-with its own prompt and tool allowlist.
+### 7. AWS Strands Agents — Swarm
 
-This runtime talks to Claude models specifically. If you have an OpenAI or Gemini
-model selected, it says so and stops rather than silently substituting — a
-quietly swapped model is a worse outcome than a clear error.
+```
+   orchestrator --handoff--> researcher
+       ^                         |
+       |                    handoff
+   writer <----- compliance <-- analyst <-- retriever
+```
 
-**Use it when** you are on Claude models and want Anthropic's own context
-management, compaction and permission model rather than reimplementing them.
+Specialists collaborate through shared context with autonomous handoffs via `handoff_to_agent`. Uses `LiteLLMModel` for provider routing. Runs the swarm synchronously in a thread executor (Strands agents are sync), with a custom callback handler that feeds events into an `asyncio.Queue`.
 
 ### Choosing between them
 
-| | LangGraph | Google ADK | DeepAgents | Claude SDK |
-|---|---|---|---|---|
-| Control flow | explicit graph | declarative composition | model-decided | model-decided |
-| Predictability | high | high | moderate | moderate |
-| Parallelism | fan-out edges | `ParallelAgent` | subagent spawning | subagent spawning |
-| Best for | known workflows | stable pipelines | open-ended research | Claude-native agents |
-| Providers | all three | all three (LiteLLM) | all three | Anthropic only |
+| | LangGraph | ADK Pipeline | ADK Workflow | DeepAgents | Claude SDK | MS Agent | Strands |
+|---|---|---|---|---|---|---|---|
+| Control flow | explicit graph | declarative | explicit graph | model-decided | model-decided | round-robin chat | autonomous handoffs |
+| Predictability | high | high | high | moderate | moderate | moderate | moderate |
+| Parallelism | fan-out edges | `ParallelAgent` | `JoinNode` | subagent spawning | subagent spawning | sequential | Swarm coordination |
+| HITL support | - | - | gate nodes | - | - | - | - |
+| Best for | known workflows | stable pipelines | complex routing | open-ended research | Claude models | iterative refinement | collaborative teams |
+| Providers | all three | all three | all three | all three | Anthropic only | all three (LiteLLM) | all three (LiteLLM) |
 
 ---
 
 ## The five agents and their tools
 
-Prompts live in one file — `app/agents/definitions.py` — and every framework
-reads from it. A wording change lands in all four at once, and a behavioural
-regression is attributable to a single diff.
+Prompts live in one file — `app/agents/definitions.py` — and every framework reads from it. A wording change lands in all seven runtimes at once.
 
 | Agent | Job | Tools |
 |---|---|---|
-| **Orchestrator** | Plans, routes, merges, owns the final answer | delegation |
+| **Orchestrator** | Plans, routes, merges, owns the final answer | delegation only |
 | **Researcher** | External and corpus-level discovery | `web_search`, `corpus_overview` |
 | **Retriever** | Hybrid RAG over the user's documents, returns cited passages | `hybrid_search`, `fetch_document_chunk` |
-| **Analyst** | Arithmetic and quantitative reasoning | `calculator`, `table_stats` |
-| **Compliance** | PII, policy and unsupported-claim review | `pii_scan`, `policy_lookup` |
-| **Writer** | Final composition with citations intact | — |
+| **Analyst** | Arithmetic, quantitative reasoning, tabular data | `calculator`, `table_stats` |
+| **Compliance** | PII screening, policy review, unsupported-claim detection | `pii_scan`, `policy_lookup` |
+| **Writer** | Final composition with citations intact | none |
 
-The routing rules are in the orchestrator prompt, and the first one is the one
-that matters most in practice:
+The first routing rule matters most in practice:
 
-> A greeting or a trivial question needs no delegation. Answer it and stop.
-> Spinning up five agents for 'hi' is a bug, not thoroughness.
+> A greeting or a trivial question needs no delegation. Answer it and stop. Spinning up five agents for 'hi' is a bug, not thoroughness.
 
-Tools are plain async functions in `app/agents/tools/core.py`. The adapters in
-`adapters.py` wrap them into LangChain `StructuredTool`s, ADK `FunctionTool`s or
-Claude SDK MCP tools — the logic is written once. Every wrapper adds a per-tool
-circuit breaker, a timeout and a structured log line, so a tool that starts
-failing degrades into a recoverable error message the agent can react to rather
-than an exception that kills the run.
+### Tool implementation pattern
 
-Turn agents on and off per user in the Config panel. The mesh requires at least
-one.
+Tools are plain async functions in `app/agents/tools/core.py`. The adapters in `adapters.py` wrap them into LangChain `StructuredTool`s, ADK `FunctionTool`s, or Claude SDK MCP tools — the logic is written once. Every wrapper adds:
+
+1. A **per-tool circuit breaker** (both custom and pybreaker)
+2. A **timeout** (`asyncio.wait_for`)
+3. A **structured log line** with input preview, output length, and duration
+
+A tool that starts failing degrades into a recoverable JSON error the agent can react to, rather than an exception that kills the run.
 
 ---
 
-## Memory
+## Resilience engineering
 
-Two stores doing two different jobs.
+AgentMesh runs two resilience stacks in parallel: a custom async-native implementation and the industry-standard tenacity + pybreaker libraries. Both read from the same `ResilienceSettings`.
 
-### Short-term — Postgres, the record
+### Custom stack (`core/resilience.py`)
 
-Everything lands here: every message, every agent step, every tool call, with a
-JSONB `metadata` column carrying citations, routing decisions, usage and the
-request id. A GIN index makes that column queryable.
+**Hand-rolled for three reasons:**
 
-The prompt window is a **view** over this, not the storage itself
-(`AGENT_SHORT_TERM_WINDOW`, default 20 turns). That distinction is what lets you
-widen the window, replay a run, or audit what an agent actually did — none of
-which is possible if history only ever lived in a framework's session object.
+1. **Capped half-open probes.** Most breaker libraries release every waiting caller when the reset timeout expires. AgentMesh caps concurrent probes at `half_open_max_calls` and requires `success_threshold` consecutive successes before closing.
 
-When a thread outgrows the window, older turns are folded into a running summary
-stored on the conversation row. Summarisation runs after the turn, never on the
-request path.
+2. **Selective tripping.** `is_retryable()` decides what counts. A 400 from a provider means *our* payload is wrong — retrying is pointless, tripping the breaker would take down a healthy dependency because of our own bug. Only timeouts, connection errors, 429s, and 5xx count. A dedicated test (`test_breaker_ignores_non_retryable_errors`) holds that line.
 
-### Long-term — OpenSearch, the distillate
+3. **Introspectable.** `CircuitBreaker.snapshot()` feeds `/api/v1/health` and the UI status bar. When a breaker opens, an operator sees which one, how long, and the last error — without reading logs.
 
-After a turn, a separate LLM pass extracts durable facts — stated preferences,
-stable context, decisions, constraints — and indexes them with embeddings. In a
-later conversation that shares no keywords, `recall()` finds them semantically.
+### Industry stack (`core/resilience_ext.py`)
 
-Two rules govern this:
+**tenacity** — `AsyncRetrying` with `wait_exponential_jitter`, `retry_if_exception(_is_retryable)`, `stop_after_attempt`. Configured from the same settings, composable via `@tenacity_retry()` or `@with_tenacity_resilience()`.
 
-1. **It runs off the request path.** A user never waits on memory writing.
-2. **Most turns extract nothing.** The extraction prompt says so explicitly. A
-   memory store that saves everything is one nobody can retrieve from.
+**pybreaker** — `CircuitBreaker` instances per dependency with a `_PybreakerListener` that logs state transitions through structlog. `pybreaker_snapshot()` feeds `/health` alongside the custom breaker snapshot.
 
-Tenant isolation is a query constraint, not a post-filter: `user_id` sits inside
-the kNN filter clause, so the ANN search never traverses another tenant's
-vectors.
+### Composition order
 
-`LongTermMemory.forget()` supports deletion by memory id or by whole
-conversation, for the right-to-be-forgotten case.
+Both stacks compose **timeout -> breaker -> retry** deliberately:
+
+- Timeout innermost, so each attempt gets its own budget.
+- Breaker inside the retry loop, so a tripped circuit short-circuits every attempt immediately.
+
+Reversing this gives you a retry loop that spends its entire budget hammering a dependency already known to be down.
+
+### Per-endpoint rate limiting (slowapi)
+
+slowapi provides granular per-endpoint limits declared as decorators:
+
+| Endpoint | Limit |
+|---|---|
+| `POST /chat/stream` | 30/minute per user |
+| `POST /chat` | 30/minute per user |
+| `POST /files` | 20/minute per user |
+| `POST /search` | 60/minute per user |
+
+The key function prefers `X-User-ID`, falls back to client IP. The custom `RateLimitMiddleware` remains as a global 240/min safety net across all endpoints.
+
+### What has a breaker
+
+`llm.openai`, `llm.anthropic`, `llm.google`, `opensearch`, `object_storage`, `embeddings`, and one per tool (`tool.hybrid_search`, `tool.web_search`, `tool.duckduckgo`, ...).
 
 ---
 
-## Hybrid search
+## Hybrid RAG retrieval
 
 Two independent queries — BM25 and kNN — fused by **Reciprocal Rank Fusion**:
 
 ```
-score(d) = Σ  1 / (k + rank_i(d))          k = 60 by default
+score(d) = Sum  1 / (k + rank_i(d))          k = 60 by default
 ```
 
-RRF over weighted score normalisation, for a specific reason. BM25 scores are
-unbounded and corpus-relative — the same query against the same document scores
-differently after you ingest a hundred more documents, because IDF moved. Cosine
-similarity is bounded and absolute. Normalising them onto a shared scale gives
-you a blend whose effective weighting drifts as the corpus grows, and it drifts
-*silently*. You find out as "retrieval got worse this quarter" with no single
-change to blame.
+### Why RRF over weighted score fusion
 
-RRF looks only at ranks. Rank 1 in either leg contributes the same today and
-after ten thousand more documents. The cost is that it discards magnitude — two
-documents adjacent in rank contribute equally even if their raw scores differ by
-an order of magnitude. For a growing corpus that is the right trade. If your
-corpus is fixed and you have relevance judgements to tune against, weighted
-fusion can beat it.
+BM25 scores are unbounded and corpus-relative — the same query against the same document scores differently after you ingest a hundred more documents, because IDF moved. Cosine similarity is bounded and absolute. Normalising them onto a shared scale gives you a blend whose effective weighting drifts as the corpus grows, silently. You find out as "retrieval got worse this quarter" with no single change to blame.
 
-The two legs run concurrently and either may fail. If embedding is unavailable,
-retrieval degrades to lexical-only with a logged warning rather than failing the
-answer. Only when both legs fail do we raise.
+RRF looks only at ranks. Rank 1 in either leg contributes the same today and after ten thousand more documents. The cost is that it discards magnitude. For a growing corpus that is the right trade.
 
-Optional cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) runs on the fused
-head. Off by default — it roughly doubles p95 retrieval latency.
+### Graceful degradation
 
-Debug retrieval directly, outside any agent:
+The two legs run concurrently via `asyncio.gather` with `return_exceptions=True`. If the embedding provider is down, retrieval degrades to BM25-only with a logged warning. Only when both legs fail does it raise.
 
-```bash
-curl -sS -X POST localhost:8000/api/v1/search \
-  -H 'X-User-ID: demo-user' -H 'Content-Type: application/json' \
-  -d '{"query":"revenue growth drivers","top_k":5}' | python3 -m json.tool
-```
-
-The response includes each hit's `bm25_rank` and `knn_rank`, so you can see
-which leg found what.
+Optional cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) runs on the fused head. Off by default — it roughly doubles p95 retrieval latency.
 
 ---
 
-## Resilience: retry and circuit breaking
+## Memory system
 
-`app/core/resilience.py`. Hand-rolled rather than pulled from a library, for
-three reasons.
+Two stores doing two different jobs.
 
-**Half-open probes are capped.** Most small breaker libraries release every
-waiting caller the moment the reset timeout expires, so a recovering dependency
-gets hit by the entire backlog and immediately fails again. Ours allows
-`half_open_max_calls` concurrent probes and requires `success_threshold`
-consecutive successes before closing.
+### Short-term — Postgres
 
-**Not every error trips the circuit.** `is_retryable()` decides. A 400 from a
-provider means *our* payload is wrong — retrying is pointless, and tripping the
-breaker on it would take down a healthy dependency because of our own bug. Only
-timeouts, connection failures, 429s and 5xx count. This is the detail most
-implementations get wrong; there is a test that exists solely to hold that line.
+Everything lands here: every message, every agent step, every tool call, with a JSONB `metadata` column carrying citations, routing decisions, usage and the request id. A GIN index makes that column queryable.
 
-**It is introspectable.** `CircuitBreaker.snapshot()` feeds `/api/v1/health` and
-the status bar in the UI. When a breaker opens, an operator sees which one, for
-how long, and with what last error, without reading logs.
+The prompt window is a **view** over this (`ShortTermMemory.window()`, default 20 turns). When the thread outgrows the window, older turns are folded into a **rolling summary** stored on the conversation row. Summarisation runs after the turn, never on the request path.
 
-### Composition order
+### Long-term — OpenSearch
 
-`with_resilience` wraps **timeout → breaker → retry**, deliberately:
+After a turn, a separate LLM pass extracts durable facts (preferences, decisions, constraints) and indexes them with embeddings. In a later conversation sharing no keywords, `recall()` finds them semantically.
 
-- Timeout innermost, so each attempt gets its own budget instead of sharing one
-  across the whole retry sequence.
-- Breaker inside the retry loop, so a tripped circuit short-circuits every
-  attempt immediately rather than being retried around.
+Rules: it runs off the request path (`_post_turn` background task), and most turns extract nothing (the extraction prompt says so explicitly — a memory store that saves everything is one nobody can retrieve from).
 
-Reverse these and you get a retry loop that spends its entire budget hammering a
-dependency already known to be down.
-
-### What has a breaker
-
-`llm.openai`, `llm.anthropic`, `llm.google`, `opensearch`, `object_storage`,
-`embeddings`, and one per tool (`tool.hybrid_search`, `tool.web_search`, …).
-
-Retry is exponential backoff with full jitter — `0.5s → 1s → 2s → 4s` plus a
-random component, capped at `RESILIENCE_MAX_BACKOFF_SECONDS`. Jitter matters:
-without it, everything that failed together retries together.
-
-```bash
-curl -s localhost:8000/api/v1/health | python3 -m json.tool | head -40
-```
+Tenant isolation is a query constraint inside the kNN filter clause, not a post-filter. `LongTermMemory.forget()` supports deletion by memory id or whole conversation.
 
 ---
 
-## Document ingestion
+## Document ingestion pipeline
 
 ```
-upload → checksum → object storage → Redis queue → Celery worker
-       → parse → chunk → embed (batched) → bulk index → status to Postgres
+upload -> checksum -> MinIO/S3 -> Redis queue -> Celery worker
+       -> parse -> chunk -> embed (batched) -> bulk index -> status to Postgres
 ```
 
-The request path does the minimum: checksum the bytes, store them, write a row,
-enqueue. A `202` means *accepted*, not *searchable*. The client polls status —
-and the console only polls while something is actually mid-ingestion.
+The request path does the minimum: checksum the bytes, store them, write a row, enqueue. A `202` means *accepted*, not *searchable*.
 
-**Formats:** PDF (with OCR fallback for scans via tesseract), DOCX, XLSX, CSV,
-HTML, JSON, Markdown, plain text. Every parser degrades to text decoding rather
-than raising; a partially readable document beats a failed job.
+### Parsers
 
-**Chunking** is recursive on structural boundaries (`\n## `, `\n# `, paragraph,
-line, sentence) with overlap, and it is page-aware — that is what lets citations
-carry a page number.
+PDF (with OCR fallback via tesseract), DOCX (paragraphs + tables), XLSX (per-sheet), CSV, HTML (script/style stripped), JSON (pretty-printed), Markdown, plain text. Every parser degrades to text decoding rather than raising.
 
-**Idempotency is the whole design.** Chunk ids are deterministic:
+### Chunking
 
-```python
-"_id": f"{document_id}:{chunk.index}"
-```
+Recursive splitting on structural boundaries (`\n## `, `\n# `, paragraph, line, sentence) with configurable overlap (default 180 chars). Page-aware — that is what lets citations carry a page number.
 
-That is what makes `acks_late=True` + `reject_on_worker_lost=True` safe. A task
-whose worker dies is redelivered and overwrites the same documents. Without
-deterministic ids, every interrupted document would duplicate — and duplicates
-in a RAG index are worse than missing content, because they crowd out other
-sources in the top-k.
+### Idempotency
 
-Other worker settings worth knowing: `worker_prefetch_multiplier=1` (these tasks
-run for minutes; a worker that prefetches four leaves three idle behind a slow
-one) and `worker_max_tasks_per_child=50` (PDF parsers leak; recycling is cheaper
-than hunting it down).
+Chunk ids are deterministic: `"{document_id}:{chunk.index}"`. Combined with `acks_late=True` + `reject_on_worker_lost=True`, a worker that dies gets the task redelivered, and the retry overwrites the same documents. Without deterministic ids, every interrupted document would duplicate — and duplicates in a RAG index crowd out other sources in the top-k.
 
-Retries use Celery's `autoretry_for` with backoff and jitter, four attempts.
-Progress is written to Postgres, not just Celery's result backend, so the UI
-shows ingestion state without talking to Redis.
-
-Scale ingestion independently of the API:
-
-```bash
-make scale-workers n=4
-```
+Other worker settings: `worker_prefetch_multiplier=1` (long tasks — don't hoard), `worker_max_tasks_per_child=50` (PDF parsers leak; recycling is cheaper than hunting).
 
 ---
 
-## Streaming
+## Observability stack
 
-SSE, not websockets. The traffic is one-directional — the client posts and then
-reads until the run ends. A websocket would add lifecycle management and proxy
-configuration for no gain.
+### Arize Phoenix (primary)
 
-SSE has one operational trap that accounts for most "the UI hangs" reports:
-**intermediate proxies buffer it**. Three things must line up.
+OpenTelemetry SDK with `BatchSpanProcessor` exporting via OTLP gRPC to Phoenix (port 4317). Instruments:
 
-1. The response sets `X-Accel-Buffering: no` (`app/api/v1/chat.py`).
-2. nginx sets `proxy_buffering off` with a long `proxy_read_timeout`
-   (`frontend/nginx.conf`, `infra/nginx/agentmesh.conf`).
-3. A heartbeat every 15 seconds keeps idle intermediaries from closing the
-   connection during a long tool call.
+| Component | Instrumentor |
+|---|---|
+| FastAPI | `opentelemetry-instrumentation-fastapi` |
+| httpx | `opentelemetry-instrumentation-httpx` |
+| OpenAI SDK | `openinference-instrumentation-openai` |
+| Anthropic SDK | `openinference-instrumentation-anthropic` |
+| LangChain / LangGraph | `openinference-instrumentation-langchain` |
+| LiteLLM | `openinference-instrumentation-litellm` |
+| Google GenAI SDK | `openinference-instrumentation-google-genai` |
+| Google ADK | `openinference-instrumentation-google-adk` |
+| AWS Bedrock | `openinference-instrumentation-bedrock` |
 
-The client uses `fetch` plus a stream reader rather than `EventSource`, because
-`EventSource` cannot send a POST body or custom headers.
+Every LLM call, tool invocation, and agent handoff is a span in Phoenix with prompt, response, token counts, and latency.
+
+### Opik (secondary, optional)
+
+Self-hosted Comet Opik running alongside Phoenix. Instruments OpenAI, LiteLLM, and LangChain via Opik's own SDK callbacks. Traces go to both platforms simultaneously.
+
+### structlog (application logging)
+
+Every log line carries `request_id`, `conversation_id`, and `user_id` from contextvars. JSON format in production, console format locally. A multi-agent trace is reconstructable from logs after the fact.
+
+---
+
+## Streaming protocol
+
+SSE, not websockets. The traffic is one-directional — the client posts and reads until the run ends.
+
+Three things must line up to prevent proxy buffering:
+1. `X-Accel-Buffering: no` on the response
+2. `proxy_buffering off` in nginx
+3. A heartbeat every 15 seconds during long tool calls
+
+The client uses `fetch` + `ReadableStream` (not `EventSource`, which cannot send POST bodies or custom headers).
 
 Each frame is one JSON event:
 
@@ -513,65 +511,50 @@ data: [DONE]
 
 ---
 
-## The UI
+## The frontend
 
-Three panes: a threads rail, the transcript with its composer, and an inspector
-that switches between **Trace**, **Config** and **Files**.
+Three-pane React console: threads rail, transcript + composer, and an inspector that switches between **Trace**, **Config**, and **Files**.
 
-The visual direction is an instrument panel rather than a chat toy. Charcoal
-chassis, signal amber for anything the operator acts on, and cyan reserved
-strictly for agent telemetry — so the eye learns that cyan means *a machine did
-something*. Monospace for every label and control; a serif only for the
-assistant's prose, because that is the one thing on screen meant to be read
-rather than scanned.
+**Trace** — live run telemetry: handoffs, tool calls with arguments, tool results with durations, token totals. This is what makes a multi-agent system debuggable.
 
-**Trace** shows the run live: hand-offs, tool calls with their arguments, tool
-results with durations, and the final token and timing totals. This is the panel
-that makes a multi-agent system debuggable instead of mysterious.
+**Config** — every runtime knob: framework (with install status), provider, model, temperature, max tokens, active specialists, memory toggles. Settings persist per user.
 
-**Config** exposes every runtime knob — framework (with install status per
-framework), provider, model, temperature, max tokens, which specialists are
-active, and the memory toggles. Everything here maps to a field the backend
-already understands, so nothing in this panel needs a server change to take
-effect. Settings persist per user.
+**Files** — drag-and-drop upload, live ingestion status with chunk/page counts, and document scoping (the retriever searches only the selected files).
 
-**Files** handles drag-and-drop upload, shows live ingestion status with chunk
-and page counts, and lets you *scope a turn to specific documents* — the
-retriever then searches only those, which is the fastest way to get a precise
-answer out of a large corpus.
+The status bar shows overall health and names any open circuit breaker.
 
-The status bar carries overall health and, when a circuit breaker opens, names
-it. A degraded dependency is visible without opening a terminal.
+---
+
+## Database schema
+
+9 SQLAlchemy models in Postgres:
+
+| Table | Purpose | Key columns |
+|---|---|---|
+| `conversations` | Thread metadata | `user_id`, `framework`, `provider`, `model`, `summary`, `total_tokens` |
+| `messages` | Full transcript | `conversation_id`, `seq`, `role`, `content`, `metadata` (JSONB + GIN) |
+| `agent_runs` | Orchestrator invocations | `conversation_id`, `framework`, `status`, `duration_ms`, `total_tokens`, `plan` (JSONB) |
+| `agent_steps` | Per-agent / tool executions | `run_id`, `agent_name`, `step_type`, `tool_name`, `input`/`output` (JSONB), `duration_ms` |
+| `documents` | Uploaded files | `user_id`, `filename`, `status` (queued->parsing->chunking->embedding->indexed), `chunk_count` |
+| `ingestion_jobs` | Pipeline progress | `document_id`, `stage`, `progress`, `attempt` |
+| `user_settings` | Per-user preferences | `framework`, `provider`, `model`, `temperature`, `enabled_agents`, `use_long_term_memory` |
+| `audit_logs` | Append-only audit trail | `action`, `resource_type`, `resource_id`, `user_id`, `detail` (JSONB) |
+
+Migrations managed by Alembic.
 
 ---
 
 ## API reference
 
-Base path `/api/v1`. Identity comes from the `X-User-ID` header (see
-[Running it in production](#running-it-in-production)).
+Base path `/api/v1`. Identity from `X-User-ID` header.
 
 ### Chat
 
-| Method | Path | Notes |
-|---|---|---|
-| `POST` | `/chat/stream` | SSE. One JSON event per frame, terminated by `[DONE]` |
-| `POST` | `/chat` | Non-streaming. For scripts and eval harnesses |
-| `GET` | `/frameworks` | The four runtimes with install status, plus the agent roster |
-
-```bash
-curl -N -X POST localhost:8000/api/v1/chat/stream \
-  -H 'X-User-ID: demo-user' -H 'Content-Type: application/json' \
-  -d '{
-        "message": "What drove revenue growth last quarter?",
-        "framework": "langgraph",
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-6",
-        "enabled_agents": ["retriever", "analyst", "writer"]
-      }'
-```
-
-Every field except `message` is optional and overrides the stored settings for
-that one call.
+| Method | Path | Rate limit | Notes |
+|---|---|---|---|
+| `POST` | `/chat/stream` | 30/min | SSE. JSON events, terminated by `[DONE]` |
+| `POST` | `/chat` | 30/min | Non-streaming variant |
+| `GET` | `/frameworks` | default | Seven runtimes with install status + agent roster |
 
 ### Conversations and runs
 
@@ -579,100 +562,79 @@ that one call.
 |---|---|---|
 | `GET` | `/conversations` | Paginated |
 | `GET` | `/conversations/{id}` | With full message history |
-| `PATCH` | `/conversations/{id}` | Rename, archive, set a system prompt |
-| `DELETE` | `/conversations/{id}` | Cascades to messages, runs and steps |
-| `GET` | `/conversations/{id}/runs` | Every orchestrator run in the thread |
-| `GET` | `/runs/{id}` | One run with every agent step — the replay endpoint |
-
-### Settings
-
-| Method | Path | Notes |
-|---|---|---|
-| `GET` | `/settings` | The caller's settings, falling back to `config.py` |
-| `PUT` | `/settings` | Persist |
-| `GET` | `/settings/options` | Frameworks, agents, model catalogue and defaults in one call |
+| `PATCH` | `/conversations/{id}` | Rename, archive, set system prompt |
+| `DELETE` | `/conversations/{id}` | Cascades to messages, runs, steps |
+| `GET` | `/conversations/{id}/runs` | Every orchestrator run |
+| `GET` | `/runs/{id}` | One run with every agent step (replay) |
 
 ### Files and search
 
+| Method | Path | Rate limit | Notes |
+|---|---|---|---|
+| `POST` | `/files` | 20/min | Multipart upload. `202` + Celery task id |
+| `GET` | `/files` | default | With ingestion status, chunk/page counts |
+| `POST` | `/search` | 60/min | Raw hybrid search, no agent |
+| `POST` | `/files/{id}/reingest` | default | Re-run the pipeline |
+| `DELETE` | `/files/{id}` | default | Removes object, row, and every chunk |
+
+### Health
+
 | Method | Path | Notes |
 |---|---|---|
-| `POST` | `/files` | Multipart upload. `202` and a Celery task id |
-| `GET` | `/files` | With ingestion status, chunk and page counts |
-| `GET` | `/files/{id}/download` | Presigned URL |
-| `POST` | `/files/{id}/reingest` | Re-run the pipeline |
-| `DELETE` | `/files/{id}` | Removes the object, the row and every chunk |
-| `POST` | `/search` | Raw hybrid search, no agent involved |
-
-### Audit and health
-
-| Method | Path | Notes |
-|---|---|---|
-| `GET` | `/audit` | Filter by action, resource, outcome, time range |
 | `GET` | `/health/live` | Liveness. Touches nothing |
 | `GET` | `/health/ready` | Readiness. `503` when a dependency is down |
-| `GET` | `/health` | Full detail: dependencies, breaker states, framework availability |
-
-Three health endpoints because Kubernetes asks three different questions.
-
-Interactive docs at `/docs`.
+| `GET` | `/health` | Full detail: dependencies, breakers (custom + pybreaker), frameworks |
 
 ---
 
 ## Configuration reference
 
-Everything is environment-driven through `app/config.py`. Nothing else in the
-codebase reads `os.environ`, so every knob is typed, validated and documented in
-one place.
+Everything is environment-driven through `app/config.py`. Every knob is typed, validated, and documented in one place.
 
 ### Agent defaults
 
 | Variable | Default | Notes |
 |---|---|---|
-| `AGENT_FRAMEWORK` | `langgraph` | `langgraph`, `google_adk`, `deepagents`, `claude_agent_sdk` |
+| `AGENT_FRAMEWORK` | `langgraph` | Any of the seven framework ids |
 | `AGENT_PROVIDER` | `anthropic` | `anthropic`, `openai`, `google` |
 | `AGENT_MODEL` | `claude-sonnet-4-6` | Must exist for the provider |
-| `AGENT_TEMPERATURE` | `0.2` | Above ~0.5 the writer paraphrases sources instead of citing them |
+| `AGENT_TEMPERATURE` | `0.2` | |
 | `AGENT_MAX_TOKENS` | `4096` | |
-| `AGENT_MAX_ORCHESTRATOR_STEPS` | `12` | Hard ceiling on routing iterations |
-| `AGENT_SHORT_TERM_WINDOW` | `20` | Turns replayed into the prompt |
-| `AGENT_LONG_TERM_TOP_K` | `5` | Memories recalled per turn |
+| `AGENT_MAX_ORCHESTRATOR_STEPS` | `12` | |
 | `AGENT_ENABLE_LONG_TERM_MEMORY` | `true` | |
-
-These are *defaults*. A user's saved settings override them; a request body
-overrides both.
-
-### Retrieval
-
-| Variable | Default | Notes |
-|---|---|---|
-| `OPENSEARCH_EMBEDDING_DIM` | `1536` | Must match the embedding model. Changing it needs a reindex |
-| `OPENSEARCH_BM25_TOP_K` | `50` | Candidates from the lexical leg |
-| `OPENSEARCH_KNN_TOP_K` | `50` | Candidates from the vector leg |
-| `OPENSEARCH_RRF_K` | `60` | Lower makes top ranks dominate more sharply |
-| `OPENSEARCH_FINAL_TOP_K` | `8` | Passages handed to the agent |
 
 ### Resilience
 
 | Variable | Default | Notes |
 |---|---|---|
 | `RESILIENCE_MAX_ATTEMPTS` | `4` | Includes the first try |
-| `RESILIENCE_INITIAL_BACKOFF_SECONDS` | `0.5` | Doubles, with jitter |
+| `RESILIENCE_INITIAL_BACKOFF_SECONDS` | `0.5` | |
 | `RESILIENCE_FAILURE_THRESHOLD` | `5` | Consecutive failures before opening |
-| `RESILIENCE_SUCCESS_THRESHOLD` | `2` | Consecutive successes before closing |
-| `RESILIENCE_BREAKER_RESET_TIMEOUT_SECONDS` | `30` | Open → half-open |
+| `RESILIENCE_BREAKER_RESET_TIMEOUT_SECONDS` | `30` | |
 | `RESILIENCE_LLM_TIMEOUT_SECONDS` | `120` | Per attempt |
 | `RESILIENCE_TOOL_TIMEOUT_SECONDS` | `30` | Per attempt |
+| `RESILIENCE_RATE_LIMIT_CHAT` | `30/minute` | slowapi chat endpoint limit |
+| `RESILIENCE_RATE_LIMIT_UPLOAD` | `20/minute` | slowapi upload endpoint limit |
+| `RESILIENCE_RATE_LIMIT_SEARCH` | `60/minute` | slowapi search endpoint limit |
 
-### Ingestion
+### Retrieval
 
 | Variable | Default | Notes |
 |---|---|---|
-| `INGESTION_CHUNK_SIZE` | `1200` | Characters |
-| `INGESTION_CHUNK_OVERLAP` | `180` | Boundary loss is where RAG quietly fails |
-| `INGESTION_EMBEDDING_MODEL` | `text-embedding-3-small` | Changing it requires a reindex |
-| `INGESTION_EMBEDDING_BATCH_SIZE` | `64` | |
+| `OPENSEARCH_EMBEDDING_DIM` | `1536` | Must match the embedding model |
+| `OPENSEARCH_BM25_TOP_K` | `50` | Lexical candidates |
+| `OPENSEARCH_KNN_TOP_K` | `50` | Vector candidates |
+| `OPENSEARCH_RRF_K` | `60` | Lower = top ranks dominate more |
+| `OPENSEARCH_FINAL_TOP_K` | `8` | Passages to the agent |
 
-Full list in `.env.example`.
+### Observability
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PHOENIX_ENABLED` | `true` | Enable OTLP tracing to Arize Phoenix |
+| `PHOENIX_HOST` | `phoenix` | Docker hostname |
+| `PHOENIX_GRPC_PORT` | `4317` | OTLP gRPC port |
+| `OPIK_ENABLED` | `false` | Enable Comet Opik tracing |
 
 ---
 
@@ -682,170 +644,113 @@ Full list in `.env.example`.
 agentmesh/
 ├── backend/
 │   ├── app/
-│   │   ├── config.py             # every knob, typed and validated
-│   │   ├── main.py               # app factory, lifespan, middleware
+│   │   ├── config.py               # every knob, typed and validated
+│   │   ├── main.py                 # app factory, lifespan, middleware, slowapi
 │   │   ├── agents/
-│   │   │   ├── base.py           # ★ AgentEvent / RunContext / AgentRuntime
-│   │   │   ├── definitions.py    # the five agents, prompts written once
-│   │   │   ├── registry.py       # framework selection + install probe
-│   │   │   ├── service.py        # ChatService: the orchestration seam
-│   │   │   ├── frameworks/       # one adapter per runtime
-│   │   │   └── tools/            # neutral tools + per-framework wrappers
+│   │   │   ├── base.py             # AgentEvent / RunContext / AgentRuntime
+│   │   │   ├── definitions.py      # the five agents, prompts written once
+│   │   │   ├── registry.py         # framework selection + install probe (7 runtimes)
+│   │   │   ├── service.py          # ChatService: the orchestration seam
+│   │   │   ├── frameworks/
+│   │   │   │   ├── adk_runtime.py            # Google ADK declarative pipeline
+│   │   │   │   ├── adk_workflow_runtime.py   # Google ADK graph Workflow
+│   │   │   │   ├── langgraph_runtime.py      # LangGraph supervisor graph
+│   │   │   │   ├── deepagents_runtime.py     # LangChain DeepAgents
+│   │   │   │   ├── claude_sdk_runtime.py     # Claude Agent SDK + MCP
+│   │   │   │   ├── ms_agent_runtime.py       # Microsoft Agent Framework
+│   │   │   │   └── strands_runtime.py        # AWS Strands Agents Swarm
+│   │   │   └── tools/
+│   │   │       ├── core.py          # 8 framework-neutral tools
+│   │   │       └── adapters.py      # LangChain / ADK / Claude SDK wrappers
 │   │   ├── core/
-│   │   │   ├── resilience.py     # ★ breaker, retry, bulkhead
-│   │   │   ├── middleware.py     # correlation, rate limit, error shaping
-│   │   │   └── logging.py        # structlog with request context
-│   │   ├── db/                   # models, session, repositories
-│   │   ├── memory/               # short_term (PG) + long_term (OpenSearch)
-│   │   ├── search/               # client, index mappings, hybrid + RRF
-│   │   ├── ingestion/            # celery app, parsers, chunking, tasks
-│   │   ├── storage/              # S3 / MinIO
-│   │   ├── api/v1/               # routes
-│   │   └── schemas/              # Pydantic contracts
-│   ├── alembic/                  # migrations
+│   │   │   ├── resilience.py        # custom breaker, retry, bulkhead
+│   │   │   ├── resilience_ext.py    # tenacity + pybreaker wrappers
+│   │   │   ├── rate_limit.py        # slowapi Limiter + exception handler
+│   │   │   ├── middleware.py        # correlation, global rate limit, error shaping
+│   │   │   ├── tracing.py          # Phoenix + Opik + 10 instrumentors
+│   │   │   ├── logging.py          # structlog with contextvars
+│   │   │   └── errors.py           # error taxonomy (AppError, CircuitOpenError, ...)
+│   │   ├── llm/
+│   │   │   └── registry.py         # model provider abstraction + EmbeddingClient
+│   │   ├── db/
+│   │   │   ├── models.py           # 9 SQLAlchemy models
+│   │   │   ├── repositories.py     # repository pattern (no raw SQL in routes)
+│   │   │   └── session.py          # async session factory
+│   │   ├── memory/
+│   │   │   ├── short_term.py       # Postgres window + rolling summary
+│   │   │   └── long_term.py        # OpenSearch semantic memory
+│   │   ├── search/
+│   │   │   ├── client.py           # async OpenSearch client
+│   │   │   ├── hybrid.py           # BM25 || kNN -> RRF + optional reranking
+│   │   │   └── indices.py          # index mappings (documents + memory)
+│   │   ├── ingestion/
+│   │   │   ├── celery_app.py       # Celery config (acks_late, 2 queues)
+│   │   │   ├── tasks.py            # ingest_document + purge_document
+│   │   │   ├── parsers.py          # PDF, DOCX, XLSX, CSV, HTML, JSON
+│   │   │   └── chunking.py         # recursive structural splitter
+│   │   ├── storage/
+│   │   │   └── object_store.py     # S3/MinIO with breaker + retry
+│   │   ├── api/v1/                 # routes (chat, files, health, settings, audit, admin)
+│   │   └── schemas/                # Pydantic request/response contracts
+│   ├── alembic/                    # database migrations
 │   └── tests/
 ├── frontend/
 │   └── src/
-│       ├── App.jsx               # three-pane shell
-│       ├── hooks/useChat.js      # SSE state: prose and telemetry kept apart
-│       ├── lib/api.js            # fetch-based SSE reader
-│       └── components/           # Transcript, Composer, Settings, Trace, Files
-├── infra/                        # postgres init, opensearch, nginx
-├── scripts/                      # seed, smoke, reindex
-├── docs/architecture.md          # the longer reasoning
-├── docker-compose.yml
-└── Makefile
+│       ├── App.jsx                 # three-pane shell
+│       ├── hooks/useChat.js        # SSE state management
+│       ├── lib/api.js              # fetch-based SSE reader
+│       └── components/             # Transcript, Composer, Settings, Trace, Files
+├── infra/                          # postgres init, opensearch, nginx configs
+├── notebook/                       # Jupyter notebooks (Agentic RAG experiments)
+├── scripts/                        # seed, smoke, reindex
+├── docs/architecture.md
+├── docker-compose.yml              # 10+ services with healthchecks
+└── Makefile                        # up, down, migrate, test, lint, seed, smoke
 ```
 
-The two files marked ★ are where the design actually lives. If you read only
-two, read those.
-
 ---
 
-## Running it in production
+## Running in production
 
-The compose file runs a complete stack on a laptop. Several things in it are
-laptop choices, and shipping them unchanged would be a mistake.
+The compose file runs a complete stack on a laptop. Several things in it are laptop choices.
 
-**Authentication is a seam, not an implementation.** `app/api/deps.py` reads
-`X-User-ID`. Everything downstream takes a user id, so dropping in JWT
-verification or OIDC introspection touches one file — but until you do, the API
-trusts a header. Do this first.
+**Authentication is a seam.** `app/api/deps.py` reads `X-User-ID`. Drop in JWT/OIDC — it touches one file.
 
-**Turn the OpenSearch security plugin back on.** `DISABLE_SECURITY_PLUGIN=true`
-is set for local convenience. `infra/opensearch/opensearch.yml` is the starting
-point for undoing it, with real certificates.
+**Turn OpenSearch security back on.** `DISABLE_SECURITY_PLUGIN=true` is for local convenience.
 
-**Move rate limiting into Redis.** The current sliding window is in-process,
-which is correct for one replica and wrong for several. The middleware interface
-does not change.
+**Move rate limiting to Redis.** The in-process sliding window is correct for one replica. slowapi supports `redis://` as a storage URI for multi-replica deployments.
 
-**Scale the tiers separately.** The API is IO-bound and scales on request
-concurrency. Ingestion workers are embedding-throughput-bound and scale on queue
-depth — that is why they are a separate service on a separate queue. OpenSearch
-needs the memory: HNSW graphs are resident, and
-`knn.memory.circuit_breaker.limit` caps how much heap they may take.
+**Scale tiers independently.** The API is IO-bound. Ingestion workers are embedding-throughput-bound. OpenSearch needs memory (HNSW graphs are resident).
 
-**Set `LOG_FORMAT=json`.** Every line carries `request_id`, `conversation_id` and
-`user_id` from contextvars, which is what makes a multi-agent trace reconstructable
-after the fact. OTLP export is wired behind `OTEL_ENABLED`.
+**Set `LOG_FORMAT=json`.** Every line carries request/conversation/user ids from contextvars.
 
-**Back up Postgres, snapshot OpenSearch.** Postgres is the system of record;
-OpenSearch is derived and can be rebuilt by re-ingesting, but rebuilding costs
-real money in embedding calls.
-
-### What this deliberately does not do
-
-- **No cost accounting.** Token counts are recorded; dollars are not.
-  `Conversation.total_cost_usd` exists and is always `0.0`.
-- **`enabled_agents` gates which specialists exist**, not a per-agent token
-  budget. A pathological question can still consume `max_orchestrator_steps`.
-- **Reranking is off by default** and roughly doubles p95 retrieval latency.
-  Measure before turning it on in a latency-sensitive path.
-- **The Claude Agent SDK path runs Anthropic models only.** It errors clearly
-  rather than substituting.
-
----
-
-## Troubleshooting
-
-**The UI hangs with no tokens appearing.** SSE is being buffered. Check
-`proxy_buffering off` in whatever proxy sits in front, and confirm
-`X-Accel-Buffering: no` survives to the client. This is the most common failure
-and it is always the proxy.
-
-**`framework_unavailable` from a runtime.** The Python package is not in the
-image. `GET /api/v1/frameworks` reports install status per framework and says
-which package is missing.
-
-**Uploads stay `queued` forever.** The worker is not consuming. Check
-`make logs-worker`, and confirm it is listening on the `ingest` queue —
-ingestion tasks are routed there specifically.
-
-**Ingestion reaches `failed` with "No extractable text".** A scanned PDF with no
-text layer. OCR is installed in the image but is slow and needs a readable scan;
-check the worker logs for `ocr_unavailable`.
-
-**Retrieval returns nothing after changing the embedding model.** A `knn_vector`
-dimension cannot change in place. Run `make reindex`, restart the backend, then
-re-ingest.
-
-**A circuit is open.** `GET /api/v1/health` names it, tells you how long it has
-been open and shows the last error. It closes itself after
-`RESILIENCE_BREAKER_RESET_TIMEOUT_SECONDS` and two successful probes. If it
-reopens immediately, the dependency is genuinely down — look at `last_error`.
-
-**OpenSearch will not start.** Almost always memory. It wants 1 GB of heap plus
-overhead; give Docker at least 4 GB. Check `docker compose logs opensearch` for
-`max virtual memory areas vm.max_map_count [65530] is too low` and raise it.
-
-**Chat returns empty answers.** No provider key. `make smoke` says so explicitly.
+**Back up Postgres, snapshot OpenSearch.** Postgres is the system of record. OpenSearch is derived and can be rebuilt by re-ingesting (but that costs embedding API calls).
 
 ---
 
 ## Extending it
 
-### Add a fifth framework
+### Add a new agent runtime
 
-Implement `AgentRuntime` — one method, `stream(ctx) -> AsyncIterator[AgentEvent]`
-— translate the framework's events into our vocabulary, register it in
-`app/agents/registry.py` and add a value to the `AgentFramework` enum. The API,
-the database, the UI and the tests need no changes. That is the entire point of
-the design.
+1. Subclass `AgentRuntime` in `app/agents/frameworks/`
+2. Implement `stream(ctx: RunContext) -> AsyncIterator[AgentEvent]`
+3. Add the framework to `AgentFramework` enum in `config.py`
+4. Register it in `agents/registry.py`
 
-### Add a tool
+Nothing else changes.
 
-Write an async function in `app/agents/tools/core.py` with a typed signature and
-a docstring — the docstring *is* the model-facing description. Register it in
-`TOOL_REGISTRY` and `TOOL_SCHEMAS`, then list it on whichever agent should have
-it in `definitions.py`. All four adapters pick it up automatically, breaker and
-timeout included.
+### Add a new tool
 
-### Add an agent
+1. Write an async function in `app/agents/tools/core.py`
+2. Add it to `TOOL_REGISTRY` and `TOOL_SCHEMAS`
+3. Add the tool name to the relevant agent spec's `tools` list in `definitions.py`
 
-Add an `AgentSpec` to `definitions.py`. It appears in `/settings/options`, in the
-UI toggles and in every framework. The ADK and LangGraph adapters need a line
-each to place it in their topology; DeepAgents and the Claude SDK pick it up
-from the roster with no change.
+The adapters pick it up automatically for all seven runtimes.
 
-### Add a model provider
+### Add a new LLM provider
 
-Extend `ModelProvider` and `MODEL_CATALOGUE` in `config.py`, then add the
-construction branch in `app/llm/registry.py`. The UI reads the catalogue over
-the API, so a new model appears in the picker without a frontend build.
-
----
-
-## Tests
-
-```bash
-make test          # in the container
-make test-local    # on the host
-make lint          # ruff
-```
-
-The suite concentrates on the parts that only run when something is already
-going wrong — breaker state transitions, retry classification, RRF fusion, chunk
-boundaries — because that is where a bug surfaces at the worst possible moment.
-`test_breaker_ignores_non_retryable_errors` exists specifically to hold the line
-that a `400` must never trip a circuit.
+1. Add the provider to `ModelProvider` enum
+2. Add the API key to `Settings`
+3. Add a branch in `build_chat_model()` and `resolve_adk_model()`
+4. Add a breaker in `LLM_BREAKERS` and `pb_llm_breakers`
+g

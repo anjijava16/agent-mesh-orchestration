@@ -18,6 +18,7 @@ from typing import Any
 from app.config import settings
 from app.core.logging import get_logger
 from app.core.resilience import tool_breaker, with_resilience
+from app.core.resilience_ext import pb_opensearch_breaker, pb_tool_breaker, with_tenacity_resilience
 from app.llm.registry import get_embedder
 from app.search.client import get_opensearch
 from app.search.hybrid import hybrid_search
@@ -31,6 +32,10 @@ tool_user_id: ContextVar[str] = ContextVar("tool_user_id", default="anonymous")
 tool_document_ids: ContextVar[tuple[str, ...]] = ContextVar("tool_document_ids", default=())
 
 
+@with_tenacity_resilience(
+    breaker=pb_opensearch_breaker, timeout=settings.resilience.search_timeout_seconds,
+    label="tool.hybrid_search",
+)
 async def hybrid_search_tool(query: str, top_k: int = 6) -> str:
     """Search the user's uploaded documents using hybrid BM25 + vector retrieval.
 
@@ -218,6 +223,10 @@ async def _tavily_search(query: str, max_results: int) -> list[dict[str, Any]]:
     ]
 
 
+@with_tenacity_resilience(
+    breaker=pb_tool_breaker("duckduckgo"), timeout=settings.resilience.tool_timeout_seconds,
+    label="tool.duckduckgo_search",
+)
 async def _duckduckgo_search(query: str, max_results: int) -> list[dict[str, Any]]:
     """DuckDuckGo web search — free, no API key required."""
     import asyncio

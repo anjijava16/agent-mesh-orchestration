@@ -37,6 +37,8 @@ React console  ──>  FastAPI  ──>  Agent runtime  ──>  ┌ Google ADK
 - [Running in production](#running-in-production)
 - [Extending it](#extending-it)
 
+**📚 [Complete Documentation Index](docs/INDEX.md)**
+
 ---
 
 ## Tech stack
@@ -169,9 +171,17 @@ The full local stack runs 14 active services plus one init container. Every serv
 | Service | Container | Image | Ports | Role | Credentials / Notes |
 |---|---|---|---|---|---|
 | **frontend** | `agentmesh-frontend` | Custom (Vite + nginx) | `8080:80` | React console | Open http://localhost:8080 |
-| **backend** | `agentmesh-backend` | Custom (FastAPI + uvicorn) | `8000:8000` | API server, SSE streaming, agent orchestration | API docs at http://localhost:8000/docs |
+| **backend** | `agentmesh-backend` | Custom (FastAPI + uvicorn) | `8000:8000` | API server, SSE streaming, agent orchestration | API docs at http://localhost:8000/docs. Depends on 3 MCP servers |
 | **celery-worker** | `agentmesh-worker` | Same as backend | none | Document ingestion workers (parse, chunk, embed, index) | 2 queues: `ingest`, `default`. Scale with `make scale-workers n=4` |
 | **flower** | `agentmesh-flower` | Same as backend | `5555:5555` | Celery task monitoring UI | `make tools` to start. Open http://localhost:5555. Profile: `tools` |
+
+### MCP Tool Servers
+
+| Service | Container | Image | Ports | Role | Credentials / Notes |
+|---|---|---|---|---|---|
+| **mcp-documents** | `agentmesh-mcp-documents` | Custom (FastMCP) | `8081:8081` | Document management: list_documents, get_document_info, search_documents | Backend depends on this. SSE transport at `/mcp` |
+| **mcp-search** | `agentmesh-mcp-search` | Custom (FastMCP) | `8082:8082` | Web search and corpus overview tools | Backend depends on this. SSE transport at `/mcp` |
+| **mcp-memory** | `agentmesh-mcp-memory` | Custom (FastMCP) | `8083:8083` | Long-term memory: recall_memories, store_memory, forget_memory | Backend depends on this. SSE transport at `/mcp` |
 
 ### LLM gateway
 
@@ -212,6 +222,9 @@ http://localhost:8080    Console (React UI)
 http://localhost:8000    Backend API (FastAPI + /docs)
 http://localhost:4000    LiteLLM Proxy (/ui for dashboard)
 http://localhost:6006    Phoenix (AI traces)
+http://localhost:8081    MCP Documents Server (/health)
+http://localhost:8082    MCP Search Server (/health)
+http://localhost:8083    MCP Memory Server (/health)
 http://localhost:9001    MinIO Console (minioadmin / minioadmin)
 http://localhost:7474    Neo4j Browser (neo4j / agentmesh2026)
 http://localhost:5601    OpenSearch Dashboards (make tools)

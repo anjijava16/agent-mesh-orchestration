@@ -1,0 +1,21 @@
+# MCP Search Server Dependencies
+
+# ---- MCP Server Framework ------------------------------------------------
+fastmcp>=2.10,<3
+mcp>=1.9,<2
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+
+# ---- Web Search ----------------------------------------------------------
+ddgs>=9,<10                 # DuckDuckGo search (no API key needed)
+httpx>=0.28,<1              # For Tavily API calls
+
+# ---- Vector Store (corpus overview) --------------------------------------
+opensearch-py[async]>=2.8,<3
+asyncpg>=0.30,<1            # For document count queries
+
+# ---- Logging -------------------------------------------------------------
+structlog>=24,<25
+
+# ---- Utilities -----------------------------------------------------------
+python-dotenv>=1.0,<2

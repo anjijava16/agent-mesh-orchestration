@@ -1,0 +1,23 @@
+# MCP Documents Server Dependencies
+# Minimal dependencies for a standalone MCP server
+
+# ---- MCP Server Framework ------------------------------------------------
+fastmcp>=2.10,<3            # FastAPI-style MCP server with SSE transport
+mcp>=1.9,<2                 # MCP SDK (pinned by fastmcp)
+pydantic>=2.10,<3           # Data validation
+pydantic-settings>=2.7,<3   # Settings management
+
+# ---- Database Drivers ----------------------------------------------------
+asyncpg>=0.30,<1            # Async PostgreSQL driver
+psycopg2-binary>=2.9,<3     # Sync PostgreSQL driver (for connection testing)
+SQLAlchemy[asyncio]>=2.0,<3 # ORM with async support
+
+# ---- Vector Store Clients ------------------------------------------------
+opensearch-py[async]>=2.8,<3  # OpenSearch async client
+
+# ---- Logging & Observability ---------------------------------------------
+structlog>=24,<25           # Structured logging
+
+# ---- Utilities -----------------------------------------------------------
+httpx>=0.28,<1              # Async HTTP client
+python-dotenv>=1.0,<2       # .env file support

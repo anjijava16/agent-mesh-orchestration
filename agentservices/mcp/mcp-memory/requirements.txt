@@ -1,0 +1,24 @@
+# MCP Memory Server Dependencies
+
+# ---- MCP Server Framework ------------------------------------------------
+fastmcp>=2.10,<3
+mcp>=1.9,<2
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+
+# ---- Database & Vector Store ---------------------------------------------
+asyncpg>=0.30,<1
+opensearch-py[async]>=2.8,<3
+motor>=3.6,<4               # Async MongoDB (for Atlas Vector Search backend)
+pymongo>=4.10,<5            # Sync MongoDB
+
+# ---- Embeddings ----------------------------------------------------------
+openai>=1.69,<2             # OpenAI embedding API
+langchain-openai>=0.3,<1    # LangChain embedding wrapper (optional, simplifies usage)
+
+# ---- Logging -------------------------------------------------------------
+structlog>=24,<25
+
+# ---- Utilities -----------------------------------------------------------
+httpx>=0.28,<1
+python-dotenv>=1.0,<2

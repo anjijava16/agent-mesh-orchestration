@@ -1,5 +1,9 @@
 .env
 .env.local
+
+# Reference project (not part of AgentMesh)
+account_check_agentic_orchestrator-develop/
+
 *.pyc
 __pycache__/
 .pytest_cache/

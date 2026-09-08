@@ -111,7 +111,13 @@ async def chat_stream(
 
 @router.post("/chat")
 @limiter.limit(settings.resilience.rate_limit_chat)
-async def chat_once(body: ChatRequest, session: DbSession, user: CurrentUser, req_id: RequestId) -> dict:
+async def chat_once(
+    body: ChatRequest,
+    session: DbSession,
+    user: CurrentUser,
+    req_id: RequestId,
+    request: Request,  # Required by slowapi rate limiter
+) -> dict:
     """Non-streaming variant for scripts and evaluation harnesses."""
     service = ChatService(session)
     chunks: list[str] = []

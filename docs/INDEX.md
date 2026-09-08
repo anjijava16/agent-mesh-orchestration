@@ -1,195 +1,120 @@
 # AgentMesh Documentation Index
 
-Complete documentation for the AgentMesh multi-agent orchestration platform.
+## Quick Start Guides
 
-## Getting Started
+### Getting Started
+- **[START_HERE_SERVICES.md](./START_HERE_SERVICES.md)** - 🚀 **START HERE!** Main entry point for services
+- **[QUICK_START.md](./QUICK_START.md)** - 2-minute quick reference
+- **[START_SERVICES_GUIDE.md](./START_SERVICES_GUIDE.md)** - Comprehensive service startup guide
 
-- **[../README.md](../README.md)** - Main project README with quickstart and architecture overview
-- **[install.md](install.md)** - Detailed installation instructions
+### Installation
+- **[LOCAL_INSTALL.md](./LOCAL_INSTALL.md)** - Local installation guide
+- **[FINAL_SETUP_SUCCESS.md](./FINAL_SETUP_SUCCESS.md)** - Setup verification checklist
 
-## Architecture & Design
+## Service Documentation
 
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - Complete project structure with visual diagrams
-- **[architecture.md](architecture.md)** - Architecture deep dive (existing)
+### Main Services
+- **[README_SERVICES.md](./README_SERVICES.md)** - Complete service architecture and guide
+- **[INFRA_STATUS.md](./INFRA_STATUS.md)** - Docker infrastructure status
 
-## Setup Guides
+### Celery & Background Tasks
+- **[CHECK_CELERY.md](./CHECK_CELERY.md)** - How to monitor Celery worker
+- **[CELERY_FIXED.md](./CELERY_FIXED.md)** - Celery issues and fixes
 
-- **[COMPLETE_SETUP_SUMMARY.md](COMPLETE_SETUP_SUMMARY.md)** - Complete summary of all features and services
-- **[MCP_AND_MONGODB_SETUP.md](MCP_AND_MONGODB_SETUP.md)** - MongoDB vector backend + LiteLLM proxy setup
-- **[MCP_SERVERS_STRUCTURE.md](MCP_SERVERS_STRUCTURE.md)** - MCP microservices architecture and implementation
+### LiteLLM & Backend
+- **[BACKEND_LITELLM_FIXED.md](./BACKEND_LITELLM_FIXED.md)** - Backend→LiteLLM connection fix
+
+## Issue Resolution
+
+### Troubleshooting Guides
+- **[ISSUES_RESOLVED.md](./ISSUES_RESOLVED.md)** - All resolved issues with solutions
+- **[SOLUTION_SUMMARY.md](./SOLUTION_SUMMARY.md)** - Executive summary of fixes
+- **[FINAL_STATUS.md](./FINAL_STATUS.md)** - Complete system status report
+
+## Operations
+
+### Logging & Monitoring
+- **[LOGGING_GUIDE.md](./LOGGING_GUIDE.md)** - Logging configuration and best practices
 
 ## Quick Reference
 
-### All Services (17 Total)
+### Most Important Documents
 
-**Core Application (4)**
-- frontend (8080)
-- backend (8000)
-- celery-worker
-- flower (5555)
+**For First-Time Users:**
+1. Start with: [START_HERE_SERVICES.md](./START_HERE_SERVICES.md)
+2. Then read: [QUICK_START.md](./QUICK_START.md)
+3. For details: [START_SERVICES_GUIDE.md](./START_SERVICES_GUIDE.md)
 
-**MCP Servers (3)**
-- mcp-documents (8081) - [agentservices/mcp/mcp-documents](../agentservices/mcp/mcp-documents/)
-- mcp-search (8082) - [agentservices/mcp/mcp-search](../agentservices/mcp/mcp-search/)
-- mcp-memory (8083) - [agentservices/mcp/mcp-memory](../agentservices/mcp/mcp-memory/)
+**For Troubleshooting:**
+1. Check: [ISSUES_RESOLVED.md](./ISSUES_RESOLVED.md)
+2. Celery issues: [CHECK_CELERY.md](./CHECK_CELERY.md)
+3. Backend issues: [BACKEND_LITELLM_FIXED.md](./BACKEND_LITELLM_FIXED.md)
 
-**LLM Gateway (1)**
-- litellm (4000)
+**For Understanding the System:**
+1. Architecture: [README_SERVICES.md](./README_SERVICES.md)
+2. Infrastructure: [INFRA_STATUS.md](./INFRA_STATUS.md)
+3. Complete status: [FINAL_STATUS.md](./FINAL_STATUS.md)
 
-**Datastores (7)**
-- postgres (5432)
-- redis (6379)
-- opensearch (9200)
-- mongodb (27017)
-- neo4j (7474)
-- pinecone (5081-5090)
-- minio (9000, 9001)
+## Document Categories
 
-**Observability (2)**
-- phoenix (6006, 4317)
-- opik (disabled)
+### 📚 Guides (How-To)
+- START_SERVICES_GUIDE.md
+- CHECK_CELERY.md
+- LOCAL_INSTALL.md
+- LOGGING_GUIDE.md
 
-### Key URLs
+### 🚀 Quick Start
+- START_HERE_SERVICES.md
+- QUICK_START.md
+
+### 🏗️ Architecture
+- README_SERVICES.md
+- INFRA_STATUS.md
+
+### 🔧 Fixes & Solutions
+- ISSUES_RESOLVED.md
+- CELERY_FIXED.md
+- BACKEND_LITELLM_FIXED.md
+
+### 📊 Status Reports
+- FINAL_STATUS.md
+- SOLUTION_SUMMARY.md
+- FINAL_SETUP_SUCCESS.md
+
+## File Organization
 
 ```
-http://localhost:8080    Frontend Console
-http://localhost:8000    Backend API (/docs)
-http://localhost:4000    LiteLLM Proxy (/ui, key: sk-agentmesh-local)
-http://localhost:6006    Phoenix (AI traces)
-http://localhost:8081    MCP Documents (/health)
-http://localhost:8082    MCP Search (/health)
-http://localhost:8083    MCP Memory (/health)
+agentmesh/
+├── README.md                    # Main project README
+├── docs/                        # All documentation (you are here)
+│   ├── INDEX.md                # This file
+│   ├── START_HERE_SERVICES.md  # Start here!
+│   ├── QUICK_START.md
+│   └── ... (all other guides)
+├── scripts/                     # Utility scripts
+│   ├── run-backend.sh
+│   ├── run-frontend.sh
+│   └── ... (other utilities)
+├── start-services.sh           # Main startup script
+├── stop-services.sh            # Main stop script
+├── check-services.sh           # Health check script
+├── check-celery.sh            # Celery health check
+└── start-all-apps.sh          # Start all applications
 ```
 
-### Environment Variables
+## Getting Help
 
-Key variables in `.env`:
+1. **Can't start services?** → Read [START_SERVICES_GUIDE.md](./START_SERVICES_GUIDE.md)
+2. **Celery not working?** → Read [CHECK_CELERY.md](./CHECK_CELERY.md)
+3. **Backend can't reach LiteLLM?** → Read [BACKEND_LITELLM_FIXED.md](./BACKEND_LITELLM_FIXED.md)
+4. **Want to understand everything?** → Read [ISSUES_RESOLVED.md](./ISSUES_RESOLVED.md)
 
-```bash
-# LLM Providers
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GOOGLE_API_KEY=
+## Related Files
 
-# LiteLLM Gateway
-LITELLM_ENABLED=true
-LITELLM_MASTER_KEY=sk-agentmesh-local
-LITELLM_SALT_KEY=sk-salt-1234567890abcdef
+- **Main README:** [../README.md](../README.md)
+- **Scripts Directory:** [../scripts/](../scripts/)
+- **Main Startup Script:** [../start-services.sh](../start-services.sh)
 
-# Vector Backend
-VECTOR_BACKEND=opensearch  # or mongodb
-MONGODB_URI=mongodb://mongodb:27017
+---
 
-# MCP Servers
-MCP_DOCUMENTS_URL=http://mcp-documents:8081
-MCP_SEARCH_URL=http://mcp-search:8082
-MCP_MEMORY_URL=http://mcp-memory:8083
-```
-
-## Component Documentation
-
-### Agent Services
-- **[../agentservices/README.md](../agentservices/README.md)** - Agent services overview
-- **[../agentservices/mcp/README.md](../agentservices/mcp/README.md)** - MCP servers documentation
-- **[../agentservices/ingestion/README.md](../agentservices/ingestion/README.md)** - Future ingestion services
-- **[../agentservices/a2aservers/README.md](../agentservices/a2aservers/README.md)** - Future agent-to-agent servers
-
-### Individual Services
-- **[../agentservices/mcp/mcp-documents/README.md](../agentservices/mcp/mcp-documents/README.md)** - Document management MCP server
-- **[../agentservices/mcp/mcp-search/README.md](../agentservices/mcp/mcp-search/README.md)** - Search MCP server
-- **[../agentservices/mcp/mcp-memory/README.md](../agentservices/mcp/mcp-memory/README.md)** - Memory MCP server
-
-## Topics
-
-### Vector Backends
-- OpenSearch (default) - BM25 + kNN with HNSW
-- MongoDB Atlas Vector Search - `$vectorSearch` aggregation
-- Config via `VECTOR_BACKEND` environment variable
-- Both use same RRF fusion and reranking
-
-### LLM Gateway
-- LiteLLM proxy at port 4000
-- Unified routing to OpenAI, Anthropic, Google
-- Latency-based routing
-- Spend tracking in Postgres
-- UI login: `sk-agentmesh-local`
-
-### Agent Runtimes (7)
-1. LangGraph - Explicit supervisor graph
-2. Google ADK Pipeline - Declarative orchestration
-3. Google ADK Workflow - Graph with HITL gates
-4. LangChain DeepAgents - Planning-first
-5. Claude Agent SDK - Anthropic harness
-6. Microsoft Agent Framework - GroupChat
-7. AWS Strands Agents - Swarm with handoffs
-
-### Memory System
-- **Short-term:** Postgres (conversation history + rolling summary)
-- **Long-term:** OpenSearch or MongoDB (semantic facts)
-- Both support GDPR deletion
-
-### Resilience
-- Custom async circuit breakers
-- tenacity + pybreaker (industry standard)
-- Per-tool timeouts and retries
-- Graceful degradation
-
-### Observability
-- **Arize Phoenix** - Primary (OTLP traces)
-- **Opik** - Alternative (disabled by default)
-- **structlog** - Structured JSON logs
-- **Prometheus** - Metrics endpoint
-
-## Development
-
-### Running Locally
-```bash
-docker compose up -d --build
-docker compose ps
-curl http://localhost:8000/api/v1/health
-```
-
-### Running Individual Services
-```bash
-# MCP Document Server
-cd agentservices/mcp/mcp-documents
-pip install -r requirements.txt
-python -m app.server
-
-# Backend
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-### Testing
-```bash
-make test          # Run all tests
-make smoke         # Smoke test (health checks + chat turn)
-make seed          # Upload sample document
-```
-
-## Troubleshooting
-
-### LiteLLM Not Starting
-- Check `DATABASE_URL` is set
-- Verify `LITELLM_SALT_KEY` is set
-- Check Postgres is healthy
-
-### MCP Servers Not Starting
-- Verify Postgres and OpenSearch are healthy
-- Check port conflicts (8081-8083)
-- Review logs: `docker logs agentmesh-mcp-documents`
-
-### MongoDB Vector Search
-- Local: Uses brute-force cosine fallback (no Atlas)
-- Production: Point `MONGODB_URI` to Atlas cluster
-- Indexes created automatically
-
-## Contributing
-
-See the main README for contribution guidelines.
-
-## License
-
-See the main README for license information.
+**Last Updated:** September 8, 2026

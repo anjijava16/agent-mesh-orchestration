@@ -112,7 +112,59 @@ The rest of the stack — Postgres, OpenSearch, Redis/Celery, MinIO, circuit bre
 
 ## Quickstart
 
-**You need:** Docker with Compose v2, about 6 GB of free RAM (OpenSearch takes most of it), and at least one model provider API key.
+### 🎯 Choose Your Setup
+
+**Option 1: Local Development (Recommended) 💻**
+- Infrastructure in Docker, applications run locally
+- 50-60% less resource usage
+- Hot reload, instant code changes
+- Better debugging experience
+
+**Option 2: Full Docker (Production-like) 🐳**
+- Everything in containers
+- Consistent environment
+- Production parity
+
+---
+
+### Option 1: Local Development Setup
+
+**Prerequisites:** Docker, Python 3.12+, Node.js 18+, ~3 GB RAM
+
+```bash
+# 1. Setup environment
+cp .env.example .env
+# Edit .env and set your API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
+
+# 2. Start infrastructure only
+./start-local.sh
+
+# 3. Open separate terminals and run:
+
+# Terminal 1 - Backend
+cd backend && source .venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2 - Frontend
+cd frontend
+npm run dev
+
+# Terminal 3 - Ingestion Service (optional, for file uploads)
+cd agentservices/ingestion/ingestion-service && source .venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+# Terminal 4 - Celery Worker (optional, for file processing)
+cd agentservices/ingestion/ingestion-service && source .venv/bin/activate
+celery -A app.worker.celery_app worker --loglevel=INFO -Q ingest,default
+```
+
+📖 **[Complete Local Installation Guide →](LOCAL_INSTALL.md)**
+
+---
+
+### Option 2: Full Docker Setup
+
+**You need:** Docker with Compose v2, ~6-8 GB RAM, and at least one model provider API key.
 
 ```bash
 cp .env.example .env
@@ -127,7 +179,7 @@ make up
 
 | What | Where |
 |---|---|
-| Console | http://localhost:8080 |
+| Console | http://localhost:8080 (or http://localhost:5173 for local frontend) |
 | API docs | http://localhost:8000/docs |
 | Phoenix UI | http://localhost:6006 |
 | LiteLLM UI | http://localhost:4000/ui |

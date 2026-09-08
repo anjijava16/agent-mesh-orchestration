@@ -1,90 +1,323 @@
-"""Configuration for Ingestion Service."""
-from enum import Enum
+"""Central configuration.
 
-from pydantic import Field
+Everything that changes between environments lives here. Nothing else in the
+codebase reads os.environ directly - if you need a knob, add it to a Settings
+class and it becomes documented, typed and validated for free.
+"""
+from __future__ import annotations
+
+from enum import Enum
+from functools import lru_cache
+from typing import Any, Literal
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class AgentFramework(str, Enum):
+    """The seven interchangeable multi-agent runtimes."""
+
+    GOOGLE_ADK = "google_adk"
+    GOOGLE_ADK_WORKFLOW = "google_adk_workflow"
+    LANGGRAPH = "langgraph"
+    DEEPAGENTS = "deepagents"
+    CLAUDE_AGENT_SDK = "claude_agent_sdk"
+    MS_AGENT_FRAMEWORK = "ms_agent_framework"
+    STRANDS_AGENTS = "strands_agents"
+
+
+class ModelProvider(str, Enum):
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GOOGLE = "google"
+
+
+class SearchProvider(str, Enum):
+    """Web search backend for the web_search tool."""
+
+    TAVILY = "tavily"
+    DUCKDUCKGO = "duckduckgo"
+    AUTO = "auto"  # Try Tavily first, fall back to DuckDuckGo
+
+
 class VectorBackend(str, Enum):
-    """Which vector store to use for indexing."""
+    """Which vector store powers RAG retrieval and long-term memory."""
 
     OPENSEARCH = "opensearch"
     MONGODB = "mongodb"
-    PINECONE = "pinecone"
+
+
+# Model catalogue. The UI reads this over /api/v1/settings/models so operators
+# can add a model here and have it appear in the picker without a frontend build.
+MODEL_CATALOGUE: dict[ModelProvider, list[dict[str, Any]]] = {
+    ModelProvider.ANTHROPIC: [
+        {"id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "context": 200_000, "supports_tools": True},
+        {"id": "claude-opus-4-1", "label": "Claude Opus 4.1", "context": 200_000, "supports_tools": True},
+        {"id": "claude-haiku-4-5", "label": "Claude Haiku 4.5", "context": 200_000, "supports_tools": True},
+    ],
+    ModelProvider.OPENAI: [
+        {"id": "gpt-4.1", "label": "GPT-4.1", "context": 1_000_000, "supports_tools": True},
+        {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini", "context": 1_000_000, "supports_tools": True},
+        {"id": "o4-mini", "label": "o4-mini (reasoning)", "context": 200_000, "supports_tools": True},
+    ],
+    ModelProvider.GOOGLE: [
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "context": 1_000_000, "supports_tools": True},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "context": 1_000_000, "supports_tools": True},
+    ],
+}
+
+
+class DatabaseSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="POSTGRES_", extra="ignore")
+
+    host: str = "postgres"
+    port: int = 5432
+    user: str = "agentmesh"
+    password: str = "agentmesh"
+    db: str = "agentmesh"
+    pool_size: int = 20
+    max_overflow: int = 10
+    pool_recycle_seconds: int = 1800
+    echo: bool = False
+
+    @property
+    def async_dsn(self) -> str:
+        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}"
+
+    @property
+    def sync_dsn(self) -> str:
+        # Alembic and Celery workers use the sync driver.
+        return f"postgresql+psycopg://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}"
+
+
+class OpenSearchSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="OPENSEARCH_", extra="ignore")
+
+    host: str = "opensearch"
+    port: int = 9200
+    user: str = "admin"
+    password: str = "Agentmesh#2026"
+    use_ssl: bool = False
+    verify_certs: bool = False
+    timeout_seconds: int = 30
+
+    documents_index: str = "agentmesh-documents"
+    memory_index: str = "agentmesh-longterm-memory"
+    embedding_dim: int = 1536
+
+    # Hybrid search tuning
+    bm25_top_k: int = 50
+    knn_top_k: int = 50
+    rrf_k: int = 60
+    final_top_k: int = 8
+    min_rerank_score: float = 0.0
+
+    @property
+    def url(self) -> str:
+        scheme = "https" if self.use_ssl else "http"
+        return f"{scheme}://{self.host}:{self.port}"
+
+
+class MongoDBSettings(BaseSettings):
+    """MongoDB Atlas Vector Search — alternative vector backend to OpenSearch."""
+
+    model_config = SettingsConfigDict(env_prefix="MONGODB_", extra="ignore")
+
+    uri: str = "mongodb://mongodb:27017"
+    database: str = "agentmesh"
+    documents_collection: str = "document_chunks"
+    memory_collection: str = "longterm_memory"
+    vector_index: str = "vector_index"              # Atlas Search index name
+    text_index: str = "text_index"                  # Atlas Search text index name
+    embedding_dim: int = 1536
+    timeout_ms: int = 30000
+
+
+class RedisSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="REDIS_", extra="ignore")
+
+    host: str = "redis"
+    port: int = 6379
+    db: int = 0
+    celery_broker_db: int = 1
+    celery_result_db: int = 2
+
+    @property
+    def url(self) -> str:
+        return f"redis://{self.host}:{self.port}/{self.db}"
+
+    @property
+    def broker_url(self) -> str:
+        return f"redis://{self.host}:{self.port}/{self.celery_broker_db}"
+
+    @property
+    def result_backend(self) -> str:
+        return f"redis://{self.host}:{self.port}/{self.celery_result_db}"
+
+
+class StorageSettings(BaseSettings):
+    """S3 on AWS, MinIO locally. Same API, different endpoint."""
+
+    model_config = SettingsConfigDict(env_prefix="STORAGE_", extra="ignore")
+
+    backend: Literal["minio", "s3"] = "minio"
+    endpoint_url: str | None = "http://minio:9000"
+    region: str = "us-east-1"
+    access_key: str = "minioadmin"
+    secret_key: str = "minioadmin"
+    bucket: str = "agentmesh-uploads"
+    presign_expiry_seconds: int = 3600
+    max_upload_bytes: int = 200 * 1024 * 1024
+
+    @model_validator(mode="after")
+    def _clear_endpoint_for_aws(self) -> StorageSettings:
+        if self.backend == "s3" and self.endpoint_url in ("", "http://minio:9000"):
+            # Real S3 - let boto3 resolve the regional endpoint itself.
+            self.endpoint_url = None
+        return self
+
+
+class ResilienceSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="RESILIENCE_", extra="ignore")
+
+    # Retry
+    max_attempts: int = 4
+    initial_backoff_seconds: float = 0.5
+    max_backoff_seconds: float = 8.0
+    backoff_multiplier: float = 2.0
+    jitter_seconds: float = 0.3
+
+    # Circuit breaker
+    failure_threshold: int = 5
+    success_threshold: int = 2
+    breaker_reset_timeout_seconds: float = 30.0
+    half_open_max_calls: int = 2
+
+    # Timeouts
+    llm_timeout_seconds: float = 120.0
+    tool_timeout_seconds: float = 30.0
+    search_timeout_seconds: float = 15.0
+
+    # Rate limiting (slowapi per-endpoint defaults)
+    rate_limit_default: int = 240          # requests per minute, global default
+    rate_limit_chat: str = "30/minute"     # chat endpoints (expensive LLM calls)
+    rate_limit_upload: str = "20/minute"   # file upload
+    rate_limit_search: str = "60/minute"   # search / read-heavy endpoints
+
+
+class AgentSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="AGENT_", extra="ignore")
+
+    framework: AgentFramework = AgentFramework.LANGGRAPH
+    provider: ModelProvider = ModelProvider.ANTHROPIC
+    model: str = "claude-sonnet-4-6"
+    temperature: float = 0.2
+    max_tokens: int = 4096
+    max_orchestrator_steps: int = 12
+    parallel_fanout: bool = True
+    enable_long_term_memory: bool = True
+    short_term_window: int = 20  # messages replayed into the prompt
+    long_term_top_k: int = 5
+
+    @field_validator("temperature")
+    @classmethod
+    def _range(cls, v: float) -> float:
+        if not 0.0 <= v <= 2.0:
+            raise ValueError("temperature must be between 0 and 2")
+        return v
+
+
+class IngestionSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="INGESTION_", extra="ignore")
+
+    chunk_size: int = 1200
+    chunk_overlap: int = 180
+    embedding_provider: ModelProvider = ModelProvider.OPENAI
+    embedding_model: str = "text-embedding-3-small"
+    embedding_batch_size: int = 64
+    max_pages_per_task: int = 50
+    task_soft_time_limit: int = 900
+    task_time_limit: int = 1200
 
 
 class Settings(BaseSettings):
-    """Service settings loaded from environment variables."""
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    # Service
-    service_name: str = "ingestion"
+    app_name: str = "AgentMesh"
+    environment: Literal["local", "dev", "staging", "prod"] = "local"
+    debug: bool = False
+    api_prefix: str = "/api/v1"
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://localhost:8080"])
     log_level: str = "INFO"
+    log_format: Literal["json", "console"] = "json"
+    request_id_header: str = "X-Request-ID"
 
-    # Database
-    postgres_dsn: str = "postgresql+asyncpg://agentmesh:agentmesh@postgres:5432/agentmesh"
-    postgres_sync_dsn: str = "postgresql+psycopg://agentmesh:agentmesh@postgres:5432/agentmesh"
+    # Credentials for the model providers.
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    google_api_key: str | None = None
 
-    # Redis / Celery
-    redis_dsn: str = "redis://redis:6379/0"
-    celery_broker_url: str = "redis://redis:6379/0"
-    celery_result_backend: str = "redis://redis:6379/0"
+    # Web search
+    search_provider: SearchProvider = SearchProvider.AUTO
+    tavily_api_key: str | None = None
 
-    # Object Storage
-    storage_backend: str = "minio"  # minio | s3
-    storage_endpoint_url: str = "http://minio:9000"
-    storage_access_key: str = "minioadmin"
-    storage_secret_key: str = "minioadmin"
-    storage_bucket: str = "agentmesh-uploads"
-    storage_region: str = "us-east-1"
-
-    # Vector Backend
+    # Vector backend: "opensearch" (default) or "mongodb"
     vector_backend: VectorBackend = VectorBackend.OPENSEARCH
 
-    # OpenSearch
-    opensearch_host: str = "opensearch"
-    opensearch_port: int = 9200
-    opensearch_user: str = "admin"
-    opensearch_password: str = "Agentmesh#2026"
-    opensearch_use_ssl: bool = False
-    opensearch_documents_index: str = "agentmesh-documents"
+    # Optional tracing
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str | None = None
 
-    # MongoDB
-    mongodb_uri: str = "mongodb://mongodb:27017"
-    mongodb_database: str = "agentmesh"
-    mongodb_documents_collection: str = "document_chunks"
-
-    # Pinecone
-    pinecone_api_key: str | None = None
-    pinecone_environment: str | None = None
-    pinecone_index_name: str = "agentmesh-documents"
-
-    # Embeddings
-    embedding_provider: str = "openai"  # openai | litellm
-    embedding_model: str = "text-embedding-3-small"
-    embedding_batch_size: int = 64
-    openai_api_key: str | None = None
-
-    # LiteLLM (alternative)
-    litellm_enabled: bool = False
-    litellm_base_url: str = "http://litellm:4000"
-    litellm_master_key: str = "sk-agentmesh-local"
-
-    # Chunking
-    chunk_size: int = 1200
-    chunk_overlap: int = 180
-
-    # Observability
+    # Arize Phoenix (AI Observability & Evaluation)
     phoenix_enabled: bool = False
     phoenix_host: str = "phoenix"
     phoenix_grpc_port: int = 4317
-    otel_exporter_otlp_endpoint: str = "http://phoenix:4317"
+
+    # Opik (Comet AI Observability)
+    opik_enabled: bool = False
+    opik_url: str = "http://opik-backend:8080"
+
+    # Neo4j (Graph Database)
+    neo4j_uri: str = "bolt://neo4j:7687"
+    neo4j_auth: str = "neo4j/agentmesh2026"
+
+    # Pinecone (Vector Database)
+    pinecone_api_key: str = "local-dev-key"
+    pinecone_host: str = "http://pinecone:5081"
+
+    # LiteLLM Proxy (model gateway)
+    litellm_enabled: bool = True
+    litellm_base_url: str = "http://litellm:4000"
+    litellm_master_key: str = "sk-agentmesh-local"
 
     @property
-    def opensearch_url(self) -> str:
-        scheme = "https" if self.opensearch_use_ssl else "http"
-        return f"{scheme}://{self.opensearch_host}:{self.opensearch_port}"
+    def neo4j_user(self) -> str:
+        return self.neo4j_auth.split("/", 1)[0] if "/" in self.neo4j_auth else "neo4j"
+
+    @property
+    def neo4j_password(self) -> str:
+        return self.neo4j_auth.split("/", 1)[1] if "/" in self.neo4j_auth else self.neo4j_auth
+
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    opensearch: OpenSearchSettings = Field(default_factory=OpenSearchSettings)
+    mongodb: MongoDBSettings = Field(default_factory=MongoDBSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
+    resilience: ResilienceSettings = Field(default_factory=ResilienceSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
+    ingestion: IngestionSettings = Field(default_factory=IngestionSettings)
+
+    def api_key_for(self, provider: ModelProvider) -> str | None:
+        return {
+            ModelProvider.OPENAI: self.openai_api_key,
+            ModelProvider.ANTHROPIC: self.anthropic_api_key,
+            ModelProvider.GOOGLE: self.google_api_key,
+        }[provider]
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

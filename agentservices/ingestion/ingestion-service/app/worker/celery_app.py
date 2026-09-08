@@ -9,8 +9,8 @@ log = get_logger(__name__)
 
 celery_app = Celery(
     "ingestion",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
+    broker=settings.redis.broker_url,
+    backend=settings.redis.result_backend,
     include=["app.worker.tasks"],
 )
 
@@ -31,4 +31,4 @@ celery_app.conf.update(
     },
 )
 
-log.info("celery_app_initialized", broker=settings.celery_broker_url)
+log.info("celery_app_initialized", broker=settings.redis.broker_url)

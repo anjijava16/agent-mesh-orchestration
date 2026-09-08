@@ -1,0 +1,32 @@
+# ============================================================
+# Deep Agents Tutorial — Python Dependencies
+# ============================================================
+# Install everything with:
+#   pip install -r requirements.txt
+
+# Core Deep Agents framework (built on LangChain + LangGraph)
+deepagents>=0.1.0
+
+# LangChain core building blocks for agents and tools
+langchain>=0.3.0
+
+# LangGraph runtime: handles streaming, memory, durable execution
+langgraph>=0.2.0
+
+# Anthropic Claude — LLM provider used in all examples
+# (You can swap this for openai if preferred)
+anthropic>=0.30.0
+
+# OpenAI — alternative LLM provider (optional)
+openai>=1.40.0
+
+# Tavily — web search API used in examples 02 and 04
+# Free tier available at https://tavily.com
+tavily-python>=0.3.0
+
+# FastAPI + uvicorn — used in example 07 (REST API server)
+fastapi>=0.111.0
+uvicorn>=0.30.0
+
+# Python dotenv — load API keys from a .env file (optional but handy)
+python-dotenv>=1.0.0

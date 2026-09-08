@@ -1,7 +1,7 @@
 """
 Ingestion Service - FastAPI application for file ingestion and processing.
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -9,7 +9,6 @@ import logging
 
 from app.config import settings
 from app.logging_config import configure_logging
-from app.worker.celery_app import celery_app
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -18,6 +17,9 @@ app = FastAPI(
     title="Ingestion Service",
     description="Microservice for file ingestion and document processing",
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
 # CORS middleware
@@ -73,6 +75,9 @@ async def ingest_document(request: IngestRequest):
     Backend will call this endpoint after uploading file to S3/MinIO.
     """
     try:
+        # Lazy import celery_app to avoid startup issues
+        from app.worker.celery_app import celery_app
+        
         task = celery_app.send_task(
             "app.worker.tasks.ingest_document",
             kwargs={
@@ -103,6 +108,9 @@ async def get_task_status(task_id: str):
     Get status of an ingestion task.
     """
     try:
+        # Lazy import celery_app
+        from app.worker.celery_app import celery_app
+        
         result = celery_app.AsyncResult(task_id)
         
         response = TaskStatusResponse(
@@ -129,6 +137,9 @@ async def purge_document(file_id: str, vector_backend: str = "opensearch"):
     Purge document from vector store.
     """
     try:
+        # Lazy import celery_app
+        from app.worker.celery_app import celery_app
+        
         task = celery_app.send_task(
             "app.worker.tasks.purge_document",
             kwargs={

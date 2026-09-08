@@ -1,6 +1,7 @@
 # AgentMesh developer commands.
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
+COMPOSE_INFRA := docker compose -f docker-compose-infra.yml
 
 .PHONY: help
 help: ## Show this list
@@ -9,6 +10,21 @@ help: ## Show this list
 .PHONY: env
 env: ## Create .env from the template if it does not exist
 	@test -f .env || (cp .env.example .env && echo "Created .env - add your API keys.")
+
+.PHONY: local-infra
+local-infra: env ## Start infrastructure only (for local development)
+	@echo "Starting infrastructure services..."
+	$(COMPOSE_INFRA) up -d
+	@echo ""
+	@echo "Infrastructure ready! Now run applications locally:"
+	@echo "  Backend:    cd backend && source .venv/bin/activate && uvicorn app.main:app --reload"
+	@echo "  Frontend:   cd frontend && npm run dev"
+	@echo ""
+	@echo "See LOCAL_INSTALL.md for complete instructions"
+
+.PHONY: local-stop
+local-stop: ## Stop infrastructure services
+	$(COMPOSE_INFRA) down
 
 .PHONY: up
 up: env ## Build and start the whole stack

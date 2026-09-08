@@ -18,8 +18,8 @@ from app.config import settings
 
 celery_app = Celery(
     "agentmesh",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
+    broker=settings.redis.broker_url,
+    backend=settings.redis.result_backend,
     include=["app.ingestion.tasks"],
 )
 

@@ -273,5 +273,5 @@ volumes:
 # ---- Networks ----------------------------------------------------------
 networks:
   default:
-    name: agentmesh_network
+    name: agentmesh_default
     driver: bridge

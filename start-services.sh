@@ -71,16 +71,20 @@ export POSTGRES_HOST=localhost
 export OPENSEARCH_HOST=localhost
 
 echo -e "${GREEN}Starting ingestion service on port 8001...${NC}"
-nohup uvicorn app.main:app \
+echo -e "${YELLOW}📝 Logs: $LOG_DIR/ingestion_${DATE}.log${NC}"
+
+# Start with tee to show logs AND save them
+uvicorn app.main:app \
     --host 0.0.0.0 \
     --port 8001 \
     --log-level info \
-    > "$LOG_DIR/ingestion_${DATE}.log" 2>&1 &
+    2>&1 | tee "$LOG_DIR/ingestion_${DATE}.log" &
 
 INGESTION_PID=$!
 echo $INGESTION_PID > "$LOG_DIR/ingestion.pid"
 echo -e "${GREEN}✓ Ingestion service started (PID: $INGESTION_PID)${NC}"
-sleep 3
+echo -e "${GREEN}  View logs: tail -f $LOG_DIR/ingestion_${DATE}.log${NC}"
+sleep 5
 
 # 3. Start Celery Worker
 echo -e "\n${GREEN}[3/6] Starting Celery Worker...${NC}"
@@ -95,16 +99,20 @@ export POSTGRES_HOST=localhost
 export OPENSEARCH_HOST=localhost
 
 echo -e "${GREEN}Starting celery worker...${NC}"
-nohup celery -A app.worker.celery_app worker \
+echo -e "${YELLOW}📝 Logs: $LOG_DIR/celery_${DATE}.log${NC}"
+
+# Start with tee to show logs AND save them
+celery -A app.worker.celery_app worker \
     --loglevel=INFO \
     --concurrency=2 \
     -Q ingest,default \
     --max-tasks-per-child=50 \
-    > "$LOG_DIR/celery_${DATE}.log" 2>&1 &
+    2>&1 | tee "$LOG_DIR/celery_${DATE}.log" &
 
 CELERY_PID=$!
 echo $CELERY_PID > "$LOG_DIR/celery.pid"
 echo -e "${GREEN}✓ Celery worker started (PID: $CELERY_PID)${NC}"
+echo -e "${GREEN}  View logs: tail -f $LOG_DIR/celery_${DATE}.log${NC}"
 
 cd "$SCRIPT_DIR"
 deactivate
@@ -129,13 +137,16 @@ source .venv/bin/activate
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 
-nohup python -m app.server \
-    > "$LOG_DIR/mcp_documents_${DATE}.log" 2>&1 &
+echo -e "${YELLOW}📝 Logs: $LOG_DIR/mcp_documents_${DATE}.log${NC}"
+python -m app.server \
+    2>&1 | tee "$LOG_DIR/mcp_documents_${DATE}.log" &
 
 MCP_DOC_PID=$!
 echo $MCP_DOC_PID > "$LOG_DIR/mcp_documents.pid"
 echo -e "${GREEN}✓ MCP Documents started (PID: $MCP_DOC_PID)${NC}"
+echo -e "${GREEN}  View logs: tail -f $LOG_DIR/mcp_documents_${DATE}.log${NC}"
 deactivate
+sleep 2
 
 # MCP Search (port 8082)
 echo -e "${YELLOW}Starting MCP Search service (port 8082)...${NC}"
@@ -149,13 +160,16 @@ source .venv/bin/activate
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 
-nohup python -m app.server \
-    > "$LOG_DIR/mcp_search_${DATE}.log" 2>&1 &
+echo -e "${YELLOW}📝 Logs: $LOG_DIR/mcp_search_${DATE}.log${NC}"
+python -m app.server \
+    2>&1 | tee "$LOG_DIR/mcp_search_${DATE}.log" &
 
 MCP_SEARCH_PID=$!
 echo $MCP_SEARCH_PID > "$LOG_DIR/mcp_search.pid"
 echo -e "${GREEN}✓ MCP Search started (PID: $MCP_SEARCH_PID)${NC}"
+echo -e "${GREEN}  View logs: tail -f $LOG_DIR/mcp_search_${DATE}.log${NC}"
 deactivate
+sleep 2
 
 # MCP Memory (port 8083)
 echo -e "${YELLOW}Starting MCP Memory service (port 8083)...${NC}"
@@ -169,13 +183,16 @@ source .venv/bin/activate
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 
-nohup python -m app.server \
-    > "$LOG_DIR/mcp_memory_${DATE}.log" 2>&1 &
+echo -e "${YELLOW}📝 Logs: $LOG_DIR/mcp_memory_${DATE}.log${NC}"
+python -m app.server \
+    2>&1 | tee "$LOG_DIR/mcp_memory_${DATE}.log" &
 
 MCP_MEM_PID=$!
 echo $MCP_MEM_PID > "$LOG_DIR/mcp_memory.pid"
 echo -e "${GREEN}✓ MCP Memory started (PID: $MCP_MEM_PID)${NC}"
+echo -e "${GREEN}  View logs: tail -f $LOG_DIR/mcp_memory_${DATE}.log${NC}"
 deactivate
+sleep 2
 
 cd "$SCRIPT_DIR"
 

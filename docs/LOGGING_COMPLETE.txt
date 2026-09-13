@@ -1,0 +1,241 @@
+════════════════════════════════════════════════════════════════
+          ✅ COMPREHENSIVE LOGGING SYSTEM COMPLETE ✅
+════════════════════════════════════════════════════════════════
+
+ALL SERVICES NOW HAVE COMPLETE LOGGING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Backend Service       - Startup & runtime logs saved & visible
+✅ Frontend Service      - Startup & runtime logs saved & visible
+✅ Ingestion Service     - Startup & runtime logs saved & visible
+✅ Celery Worker         - Startup & runtime logs saved & visible
+✅ MCP Documents Service - Startup & runtime logs saved & visible
+✅ MCP Search Service    - Startup & runtime logs saved & visible
+✅ MCP Memory Service    - Startup & runtime logs saved & visible
+
+════════════════════════════════════════════════════════════════
+
+📁 LOG LOCATIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All logs are saved in: logs/
+
+Format: {service}_{YYYYMMDD_HHMMSS}.log
+
+Example files:
+  • logs/backend_20260908_142530.log
+  • logs/ingestion_20260908_142530.log
+  • logs/celery_20260908_142530.log
+  • logs/mcp_documents_20260908_142530.log
+  • logs/mcp_search_20260908_142530.log
+  • logs/mcp_memory_20260908_142530.log
+
+════════════════════════════════════════════════════════════════
+
+🚀 HOW TO START SERVICES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option 1: Start with VISIBLE LOGS (Recommended for Development)
+──────────────────────────────────────────────────────────────────
+./start-services-with-logs.sh
+
+✓ Shows startup logs in console in real-time
+✓ Saves all logs to files
+✓ Color-coded output
+✓ Service status checks
+✓ Best for debugging
+
+
+Option 2: Start in Background (Production-like)
+──────────────────────────────────────────────────────────────────
+./start-services.sh
+
+✓ Services run in background
+✓ Logs saved to files
+✓ No console output
+✓ Best for production
+
+
+Option 3: Start Individual Services (Interactive)
+──────────────────────────────────────────────────────────────────
+scripts/run-backend.sh         # Backend with logs
+scripts/run-frontend.sh        # Frontend with logs
+scripts/run-ingestion.sh       # Ingestion with logs
+scripts/run-celery.sh          # Celery with logs
+scripts/run-mcp-documents.sh   # MCP Documents with logs
+scripts/run-mcp-search.sh      # MCP Search with logs
+scripts/run-mcp-memory.sh      # MCP Memory with logs
+
+✓ Shows logs in console
+✓ Saves logs to files
+✓ Interactive (use Ctrl+C to stop)
+✓ Best for development/testing
+
+════════════════════════════════════════════════════════════════
+
+📊 HOW TO VIEW LOGS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use the Log Viewer Script:
+──────────────────────────────────────────────────────────────────
+
+# Watch all logs (real-time)
+./view-logs.sh all -f
+
+# Watch specific service logs
+./view-logs.sh backend -f          # Backend logs
+./view-logs.sh ingestion -f        # Ingestion logs
+./view-logs.sh celery -f           # Celery logs
+./view-logs.sh mcp-docs -f         # MCP Documents logs
+./view-logs.sh mcp-search -f       # MCP Search logs
+./view-logs.sh mcp-memory -f       # MCP Memory logs
+
+# View last N lines
+./view-logs.sh backend -n 100      # Last 100 lines
+./view-logs.sh celery -n 50        # Last 50 lines
+
+# List all log files
+./view-logs.sh -l
+
+# Help
+./view-logs.sh --help
+
+
+Manual Log Viewing:
+──────────────────────────────────────────────────────────────────
+
+# Watch all today's logs
+tail -f logs/*_$(date +%Y%m%d)*.log
+
+# Watch specific service
+tail -f logs/backend_*.log
+tail -f logs/celery_*.log
+
+# View last lines
+tail -n 100 logs/ingestion_*.log
+
+# Search for errors
+grep -i "error" logs/*.log
+
+# Search with context
+grep -C 3 "failed" logs/celery_*.log
+
+════════════════════════════════════════════════════════════════
+
+📝 WHAT LOGS CONTAIN:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Startup Logs:
+──────────────────────────────────────────────────────────────────
+✓ Service initialization
+✓ Database connections
+✓ Redis connections
+✓ OpenSearch connections
+✓ Configuration loading
+✓ Port binding
+✓ Ready status
+
+Runtime Logs:
+──────────────────────────────────────────────────────────────────
+✓ HTTP requests/responses
+✓ API calls
+✓ Database queries
+✓ Celery task execution
+✓ Document processing
+✓ Search operations
+✓ Errors and exceptions
+✓ Performance metrics
+
+════════════════════════════════════════════════════════════════
+
+🎯 QUICK COMMANDS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Start services with visible logs:
+./start-services-with-logs.sh
+
+View all logs:
+./view-logs.sh all -f
+
+View backend logs:
+./view-logs.sh backend -f
+
+View celery logs:
+./view-logs.sh celery -f
+
+List log files:
+./view-logs.sh -l
+
+Search for errors:
+grep -i "error" logs/*.log
+
+Stop services:
+./stop-services.sh
+
+════════════════════════════════════════════════════════════════
+
+📚 DOCUMENTATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Complete logging guide:
+docs/COMPREHENSIVE_LOGGING_GUIDE.md
+
+Topics covered:
+  • Log directory structure
+  • Starting services with logs
+  • Viewing logs
+  • Log rotation
+  • Troubleshooting with logs
+  • Log levels
+  • Real-time monitoring
+  • Best practices
+
+════════════════════════════════════════════════════════════════
+
+✨ NEW FILES CREATED:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Scripts:
+  ✓ start-services-with-logs.sh    - Start with visible logs
+  ✓ view-logs.sh                   - Log viewer utility
+  ✓ scripts/run-backend.sh         - Backend with logs
+  ✓ scripts/run-frontend.sh        - Frontend with logs
+  ✓ scripts/run-ingestion.sh       - Ingestion with logs
+  ✓ scripts/run-celery.sh          - Celery with logs
+  ✓ scripts/run-mcp-documents.sh   - MCP Documents with logs
+  ✓ scripts/run-mcp-search.sh      - MCP Search with logs
+  ✓ scripts/run-mcp-memory.sh      - MCP Memory with logs
+
+Documentation:
+  ✓ docs/COMPREHENSIVE_LOGGING_GUIDE.md
+  ✓ docs/PHOENIX_NETWORK_FIX.md
+  ✓ docs/FILE_REORGANIZATION.md
+
+════════════════════════════════════════════════════════════════
+
+🎉 EVERYTHING IS READY!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All services now have comprehensive logging:
+  ✅ Visible during startup
+  ✅ Saved to log files
+  ✅ Easy to view and search
+  ✅ Timestamped and organized
+  ✅ Production-ready
+
+To get started:
+
+1. Start services with visible logs:
+   ./start-services-with-logs.sh
+
+2. In another terminal, watch logs:
+   ./view-logs.sh all -f
+
+3. Read the complete guide:
+   cat docs/COMPREHENSIVE_LOGGING_GUIDE.md
+
+════════════════════════════════════════════════════════════════
+
+💡 TIP: Use ./view-logs.sh --help for all options!
+
+════════════════════════════════════════════════════════════════

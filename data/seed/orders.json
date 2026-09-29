@@ -1,0 +1,61 @@
+{
+  "orders": [
+    {
+      "order_ref": "NW-7731094",
+      "buyer_ref": "BUY-90211",
+      "placed_at": "2026-09-05",
+      "delivered_at": "2026-09-19",
+      "carrier_status": "delivered, signed for at front desk",
+      "seller_ref": "SEL-CRESTLINE",
+      "seller_is_third_party": true,
+      "tender": "card",
+      "capture_intact": true,
+      "lines": [
+        {"sku": "LUMEN-PRO-X1", "title": "Lumen Pro X1 espresso machine",
+         "qty": 1, "unit_price": 1284.00}
+      ],
+      "carrier_events": [
+        {"at": "2026-09-16T08:12:00Z", "event": "accepted at origin facility"},
+        {"at": "2026-09-17T22:40:00Z", "event": "in transit - Memphis hub"},
+        {"at": "2026-09-18T11:05:00Z", "event": "exception: parcel re-labelled, outer box damaged"},
+        {"at": "2026-09-19T09:31:00Z", "event": "delivered, signed for at front desk"}
+      ]
+    },
+    {
+      "order_ref": "NW-6620418",
+      "buyer_ref": "BUY-90211",
+      "placed_at": "2026-08-02",
+      "delivered_at": "2026-08-07",
+      "carrier_status": "delivered",
+      "seller_ref": "SEL-CRESTLINE",
+      "seller_is_third_party": true,
+      "tender": "card",
+      "capture_intact": false,
+      "lines": [{"sku": "LUMEN-GRIND-2", "title": "Lumen burr grinder",
+                 "qty": 1, "unit_price": 219.00}]
+    },
+    {
+      "order_ref": "NW-5510277",
+      "buyer_ref": "BUY-90211",
+      "placed_at": "2026-07-14",
+      "delivered_at": "2026-07-19",
+      "carrier_status": "delivered",
+      "seller_ref": "SEL-NORTHWIND",
+      "seller_is_third_party": false,
+      "tender": "wallet",
+      "capture_intact": false,
+      "lines": [{"sku": "NW-KETTLE-9", "title": "Gooseneck kettle",
+                 "qty": 1, "unit_price": 74.00}]
+    }
+  ],
+  "prior_refunds": [
+    {"order_ref": "NW-6620418", "buyer_ref": "BUY-90211", "seller_ref": "SEL-CRESTLINE",
+     "at": "2026-08-11", "amount": 219.00, "reason": "damaged on arrival"},
+    {"order_ref": "NW-6011903", "buyer_ref": "BUY-90211", "seller_ref": "SEL-CRESTLINE",
+     "at": "2026-07-28", "amount": 189.00, "reason": "damaged on arrival"},
+    {"order_ref": "NW-5902244", "buyer_ref": "BUY-90211", "seller_ref": "SEL-CRESTLINE",
+     "at": "2026-07-02", "amount": 130.00, "reason": "damaged on arrival"},
+    {"order_ref": "NW-5510277", "buyer_ref": "BUY-90211", "seller_ref": "SEL-NORTHWIND",
+     "at": "2026-07-21", "amount": 74.00, "reason": "changed mind"}
+  ]
+}

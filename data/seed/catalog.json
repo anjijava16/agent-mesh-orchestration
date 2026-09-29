@@ -1,0 +1,41 @@
+{
+  "items": [
+    {"sku": "LUMEN-PRO-X1", "title": "Lumen Pro X1 espresso machine",
+     "category": "small-appliance", "fragile": true, "list_price": 1284.00,
+     "serial_tracked": true},
+    {"sku": "LUMEN-GRIND-2", "title": "Lumen burr grinder",
+     "category": "small-appliance", "fragile": true, "list_price": 219.00,
+     "serial_tracked": false}
+  ],
+  "sellers": [
+    {
+      "seller_ref": "SEL-CRESTLINE",
+      "display_name": "Crestline Home",
+      "third_party": true,
+      "a2a_agent": true,
+      "return_policy": {
+        "window_days": 30,
+        "buyer_pays_return_shipping": true,
+        "restocking_fee_pct": 15,
+        "text": "Returns accepted within 30 days. Buyer pays return shipping. A 15% restocking fee applies to opened items."
+      },
+      "defect_signals": {
+        "packaging_complaints_90d": 41,
+        "category_baseline_90d": 6,
+        "note": "Crestline Home has an open packaging investigation for fragile small-appliance lines."
+      }
+    },
+    {
+      "seller_ref": "SEL-NORTHWIND",
+      "display_name": "Northwind Market (first party)",
+      "third_party": false,
+      "a2a_agent": false,
+      "return_policy": {"window_days": 30, "buyer_pays_return_shipping": false,
+                        "restocking_fee_pct": 0, "text": "Free returns within 30 days."}
+    }
+  ],
+  "category_rules": [
+    {"category": "small-appliance", "fragile": true,
+     "rule": "Fragile categories are covered by MKT-014 regardless of seller terms."}
+  ]
+}

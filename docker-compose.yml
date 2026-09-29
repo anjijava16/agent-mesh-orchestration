@@ -1,0 +1,36 @@
+# All fifteen services in one container, which is how the demo runs.
+#
+# To deploy them the way the architecture actually intends -- one process per
+# agent, scaled and deployed independently -- give each its own service block
+# with `command: python scripts/run_one.py agent <key>` and its own port. The
+# point of the protocol boundary is that doing so changes no application code.
+
+services:
+  refundry:
+    build: .
+    ports:
+      - "8080:8080"      # gateway   <- the only one you need
+      - "8000:8000"      # arbiter
+      - "8001:8001"      # tracer
+      - "8002:8002"      # witness
+      - "8003:8003"      # statute
+      - "8004:8004"      # sentry
+      - "8005:8005"      # treasury
+      - "8006:8006"      # counterparty (the seller's, in the demo)
+      - "8201-8207:8201-8207"   # the seven MCP servers
+    environment:
+      REFUNDRY_HOST: 0.0.0.0
+      REFUNDRY_REASONING: deterministic
+      REFUNDRY_JEV: auto
+      # TYPESAFE_API_KEY: ${TYPESAFE_API_KEY}
+    volumes:
+      - refundry-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import httpx;httpx.get('http://127.0.0.1:8080/health').raise_for_status()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  refundry-data:

@@ -1,0 +1,48 @@
+{
+  "clauses": [
+    {
+      "clause_id": "MKT-014",
+      "title": "Damaged on arrival",
+      "text": "Where an item arrives damaged, the marketplace guarantee applies and overrides any seller return policy. The buyer is not liable for return shipping and no restocking fee may be charged. The full amount paid, including shipping, is refundable to the original tender. Applies within 30 days of delivery.",
+      "rule": {"applies_to": ["damaged"], "window_days": 30,
+               "buyer_owes_shipping": false, "overrides_seller_policy": true,
+               "refund_fraction": 1.0}
+    },
+    {
+      "clause_id": "MKT-021",
+      "title": "Item not received",
+      "text": "Where tracking shows delivery but the buyer states the item was not received, the claim is assessed on the carrier record and the buyer's account history. A refund may be issued to store credit at the marketplace's discretion.",
+      "rule": {"applies_to": ["not_received"], "window_days": 30,
+               "buyer_owes_shipping": false, "overrides_seller_policy": false,
+               "refund_fraction": 1.0}
+    },
+    {
+      "clause_id": "MKT-030",
+      "title": "Wrong item sent",
+      "text": "Where the item delivered is not the item ordered, the seller bears return shipping and the buyer is refunded in full on receipt of the return.",
+      "rule": {"applies_to": ["wrong_item"], "window_days": 30,
+               "buyer_owes_shipping": false, "overrides_seller_policy": true,
+               "refund_fraction": 1.0}
+    },
+    {
+      "clause_id": "MKT-044",
+      "title": "Not as described, quality",
+      "text": "Quality complaints on items that match their description are governed by the seller's own return policy, including any restocking fee the seller has published.",
+      "rule": {"applies_to": ["quality"], "window_days": 30,
+               "buyer_owes_shipping": true, "overrides_seller_policy": false,
+               "refund_fraction": 0.85}
+    },
+    {
+      "clause_id": "MKT-052",
+      "title": "Refund abuse",
+      "text": "A refund-abuse score is advisory. It may trigger manual review but is never on its own a ground for denying a claim that is otherwise covered by a marketplace guarantee.",
+      "rule": {"applies_to": [], "advisory": true}
+    },
+    {
+      "clause_id": "MKT-060",
+      "title": "Authorisation threshold",
+      "text": "A refund at or above the auto-approval threshold requires a named approver before funds move. The approver must be shown the cited clause and the risk assessment.",
+      "rule": {"applies_to": [], "threshold": 1000.00, "requires_named_approver": true}
+    }
+  ]
+}

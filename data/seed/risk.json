@@ -1,0 +1,24 @@
+{
+  "accounts": [
+    {
+      "buyer_ref": "BUY-90211",
+      "tenure_days": 1460,
+      "orders_lifetime": 87,
+      "refunds_90d": 4,
+      "refunds_value_90d": 612.0,
+      "refund_rate_percentile_90d": 97,
+      "linked_accounts": 0,
+      "chargebacks_lifetime": 0,
+      "address_changes_90d": 0
+    }
+  ],
+  "percentile_by_refund_count_90d": {
+    "0": 22,
+    "1": 63,
+    "2": 79,
+    "3": 90,
+    "4": 97,
+    "5": 99,
+    "6": 99
+  }
+}

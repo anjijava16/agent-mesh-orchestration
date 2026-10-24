@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Refundry · Refund Resolution Network</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⚖︎</span>
+      <div>
+        <h1>Refundry</h1>
+        <p class="tagline">One orchestrator · six agents · seven MCP servers · one human signature</p>
+      </div>
+    </div>
+    <div class="status-cluster">
+      <div class="pill" id="health-pill"><span class="dot"></span><span id="health-text">checking…</span></div>
+      <div class="meta" id="gateway-meta">gateway: —</div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="file">File a claim</button>
+    <button class="tab" data-tab="cases">Cases</button>
+    <button class="tab" data-tab="ledger">Ledger</button>
+    <button class="tab" data-tab="network">Network</button>
+  </nav>
+
+  <main>
+    <!-- ===================== FILE A CLAIM / LIVE CASE ===================== -->
+    <section class="panel active" id="tab-file">
+      <div class="grid">
+        <div class="card">
+          <h2>File a refund claim</h2>
+          <form id="claim-form">
+            <label>Order reference
+              <input name="order_ref" value="NW-7731094" required />
+            </label>
+            <label>Buyer reference
+              <input name="buyer_ref" value="BUY-90211" />
+            </label>
+            <label>Narrative
+              <textarea name="narrative" rows="4" required>It arrived with the boiler casing cracked. The seller is telling me to pay return shipping on a machine that showed up broken.</textarea>
+            </label>
+            <label>Evidence refs <span class="hint">(one per line)</span>
+              <textarea name="evidence_refs" rows="2">case://RFD-48213/evidence/photo-1.jpg</textarea>
+            </label>
+            <button type="submit" class="primary" id="file-btn">Submit claim</button>
+          </form>
+        </div>
+
+        <div class="card case-card" id="case-card">
+          <div class="case-head">
+            <h2>Live case</h2>
+            <span class="badge" id="case-state">idle</span>
+          </div>
+          <div class="case-summary" id="case-summary">
+            <p class="muted">Submit a claim to watch the agent mesh resolve it in real time.</p>
+          </div>
+
+          <div class="approval hidden" id="approval-box">
+            <h3>✍︎ Approval required</h3>
+            <div id="approval-detail" class="approval-detail"></div>
+            <label>Approver
+              <input id="approver" value="elena.marchetti@northwind" />
+            </label>
+            <label>Note <span class="hint">(optional)</span>
+              <input id="approve-note" placeholder="reason for the decision" />
+            </label>
+            <div class="approval-actions">
+              <button class="primary" id="approve-btn">Approve spend</button>
+              <button class="danger" id="decline-btn">Decline</button>
+            </div>
+          </div>
+
+          <h3 class="timeline-title">Timeline</h3>
+          <ol class="timeline" id="timeline">
+            <li class="muted">no activity yet</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CASES ===================== -->
+    <section class="panel" id="tab-cases">
+      <div class="card">
+        <div class="card-head">
+          <h2>All cases</h2>
+          <button class="ghost" id="refresh-cases">↻ Refresh</button>
+        </div>
+        <table class="data" id="cases-table">
+          <thead><tr><th>Case</th><th>Status</th><th>Type</th><th>Amount</th><th></th></tr></thead>
+          <tbody><tr><td colspan="5" class="muted">loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="card hidden" id="trail-card">
+        <div class="card-head">
+          <h2>Protocol trail · <span id="trail-case"></span></h2>
+          <button class="ghost" id="close-trail">✕ Close</button>
+        </div>
+        <ol class="trail" id="trail-list"></ol>
+      </div>
+    </section>
+
+    <!-- ===================== LEDGER ===================== -->
+    <section class="panel" id="tab-ledger">
+      <div class="card">
+        <div class="card-head">
+          <h2>Refund ledger</h2>
+          <button class="ghost" id="refresh-ledger">↻ Refresh</button>
+        </div>
+        <table class="data" id="ledger-table">
+          <thead><tr><th>Ref</th><th>Case</th><th>Amount</th><th>Tender</th><th>When</th></tr></thead>
+          <tbody><tr><td colspan="5" class="muted">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== NETWORK ===================== -->
+    <section class="panel" id="tab-network">
+      <div class="card">
+        <div class="card-head">
+          <h2>System health</h2>
+          <button class="ghost" id="refresh-network">↻ Run doctor</button>
+        </div>
+        <div id="doctor-summary" class="muted">loading…</div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h2>A2A Agents</h2>
+          <div id="agents-list" class="tiles"><p class="muted">loading…</p></div>
+        </div>
+        <div class="card">
+          <h2>MCP Servers</h2>
+          <div id="servers-list" class="tiles"><p class="muted">loading…</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Refundry UI · Node.js dashboard over the FastAPI gateway</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

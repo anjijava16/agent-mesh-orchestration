@@ -1,0 +1,19 @@
+{
+  "name": "refundry-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js web UI for the Refundry refund-resolution network (MCP + A2A).",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^2.0.6"
+  }
+}

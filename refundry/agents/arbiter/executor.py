@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from refundry import ids, store
 from refundry.a2a import A2AServer, Executor, RequestContext
 from refundry.agents.arbiter.card import CARD
-from refundry.agents.arbiter.graph import graph
+from refundry.agents.arbiter.engines import get_engine
 from refundry.agents.arbiter.graph_engine import RunResult
 from refundry.models import CaseState, Claim
 
@@ -60,13 +60,18 @@ class ArbiterExecutor(Executor):
                 return
             node, raw = saved
             state = CaseState(**raw)
-            ctx.working(f"resuming at {node}")
-            run = await graph.run(state, thread_id=ctx.task_id, start=node,
-                                  resume={"approved": bool(data.get("approved")),
-                                          "approver": data.get("approver", ""),
-                                          "note": data.get("note", "")})
+            # Resume on the same engine the case started on (recorded in the
+            # checkpointed state), not whatever is globally selected now.
+            engine = get_engine(state.routing.get("orchestrator")
+                                or store.get_orchestrator())
+            ctx.working(f"resuming at {node} on {engine.key}")
+            run = await engine.run(state, thread_id=ctx.task_id, start=node,
+                                   resume={"approved": bool(data.get("approved")),
+                                           "approver": data.get("approver", ""),
+                                           "note": data.get("note", "")})
             store.audit("arbiter", "graph.resumed", context_id=state.context_id,
-                        detail={"from": node, "visited": run.visited})
+                        detail={"from": node, "visited": run.visited,
+                                "orchestrator": engine.key})
             _publish(ctx, run)
             return
 
@@ -79,11 +84,16 @@ class ArbiterExecutor(Executor):
         # The task and the case share one contextId, so five processes produce
         # one ordered story.
         ctx.task["contextId"] = state.context_id
-        ctx.working(f"opening {state.case_id}")
+        engine = get_engine(store.get_orchestrator())
+        state.routing["orchestrator"] = engine.key
+        ctx.working(f"opening {state.case_id} on {engine.key}")
+        store.audit("arbiter", "orchestrator.selected", target=engine.key,
+                    context_id=state.context_id, detail={"label": engine.label})
 
-        run = await graph.run(state, thread_id=ctx.task_id)
+        run = await engine.run(state, thread_id=ctx.task_id)
         store.audit("arbiter", "graph.run", context_id=state.context_id,
-                    detail={"status": run.status, "visited": run.visited})
+                    detail={"status": run.status, "visited": run.visited,
+                            "orchestrator": engine.key})
         _publish(ctx, run)
 
 

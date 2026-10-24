@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from refundry import ids, store
 from refundry.a2a import A2AClient
+from refundry.agents.arbiter.engines import available_engines, is_available
 from refundry.agents.registry import AGENTS
 from refundry.config import a2a_url, card_url, mcp_url, settings
 from refundry.jev import jev
@@ -56,6 +57,10 @@ class Approval(BaseModel):
     approved: bool = True
     approver: str = Field(default="", examples=["elena.marchetti@northwind"])
     note: str = ""
+
+
+class OrchestratorChoice(BaseModel):
+    orchestrator: str = Field(examples=["deterministic", "langgraph", "google_adk"])
 
 
 # --------------------------------------------------------------------------
@@ -245,8 +250,39 @@ def build() -> FastAPI:
         return {"service": "refundry-gateway", "ok": True,
                 "reasoning": settings.reasoning,
                 "jev_backend": jev.backend,
+                "orchestrator": store.get_orchestrator(),
+                "orchestrators": available_engines(),
                 "auto_approval_limit": settings.auto_approval_limit,
                 "confidence_floor": settings.confidence_floor}
+
+    # ------------------------------------------------------------- orchestrator
+
+    @api.get(f"{API}/orchestrator", tags=["orchestrator"])
+    async def get_orchestrator():
+        """The selected orchestrator engine and every option, with availability.
+
+        The selection is persisted in SQLite today; a swap to Postgres changes
+        nothing a caller can see."""
+        return {"selected": store.get_orchestrator(),
+                "options": available_engines()}
+
+    @api.put(f"{API}/orchestrator", tags=["orchestrator"])
+    async def set_orchestrator(choice: OrchestratorChoice, request: Request):
+        """Choose which engine resolves future cases: the deterministic
+        state-graph (jev:local), LangGraph, or Google ADK."""
+        key = choice.orchestrator
+        valid = {e["key"] for e in available_engines()}
+        if key not in valid:
+            raise HTTPException(422, f"unknown orchestrator '{key}'; "
+                                     f"choose one of {sorted(valid)}")
+        if not is_available(key):
+            raise HTTPException(409, f"orchestrator '{key}' is not installed on "
+                                     f"this host")
+        store.set_orchestrator(key)
+        store.audit("gateway", "orchestrator.changed", target=key,
+                    trace_id=request.state.trace_id)
+        return {"selected": key, "options": available_engines()}
+
 
     @api.get(f"{API}/doctor", tags=["ops"])
     async def doctor():

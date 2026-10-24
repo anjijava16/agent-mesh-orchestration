@@ -20,7 +20,36 @@ logic lives here — exactly like the gateway, the UI decides nothing.
 | **Ledger** | Every refund that was actually posted | `GET /api/v1/ledger` |
 | **Network** | Live health of all 15 services, every A2A Agent Card, every MCP server | `GET /api/v1/doctor`, `/agents`, `/servers` |
 
-The header shows live gateway health (online / offline, reasoning mode, Jev backend).
+The header shows live gateway health (online / offline, reasoning mode, Jev backend) and a
+**orchestrator selector** (see below).
+
+---
+
+## Choosing the orchestrator engine
+
+The header has an **orchestrator** dropdown. The Arbiter's process is a graph of nodes and
+edges; *what* each node does is fixed, but *how* the graph is walked is pluggable. Pick any
+of three engines — they run the **same six agents** and produce the **same refund outcome**:
+
+| Option | Engine | Needs |
+|---|---|---|
+| **deterministic · jev:local** | The project's own ~90-line state-graph engine (default) | — |
+| **LangGraph** | A real LangGraph `StateGraph` with dynamic `Command` routing and a conditional entry point | `langgraph` |
+| **Google ADK** | A real Google ADK custom workflow agent driven by the ADK `Runner` | `google-adk` |
+
+Your choice is **saved in SQLite** (the `app_settings` table) via `PUT /api/v1/orchestrator`,
+so it survives page reloads, gateway restarts, and even `make seed`. (Postgres later changes
+nothing — the store swap is transparent.) Each case records which engine resolved it, shown
+in the **Live case** panel and the audit trail; a case started on one engine always *resumes*
+on that same engine, even if you switch the global selection mid-approval.
+
+If an engine's optional package is not installed, its option appears disabled as
+`… (not installed)` and the app falls back to the deterministic engine. Install all three
+with `make install` (they are listed in `requirements.txt`) or:
+
+```bash
+.venv/bin/pip install langgraph google-adk
+```
 
 ---
 
@@ -28,6 +57,7 @@ The header shows live gateway health (online / offline, reasoning mode, Jev back
 
 - **Node.js ≥ 18** (tested on Node 22) and npm
 - The **Refundry backend running** — the gateway must be up on `http://127.0.0.1:8080`
+- Optional, for the LangGraph / Google ADK engines: `pip install langgraph google-adk`
 
 ---
 
@@ -68,12 +98,19 @@ $1,284.00 spend when the dashboard stops and asks you to sign.
 ## Try the full flow
 
 1. Open <http://127.0.0.1:3000> — the header should read **online**.
-2. On **File a claim**, keep the pre-filled example and click **Submit claim**.
-3. The **Live case** panel streams the agents' work in real time (SSE).
-4. The case stops at **✍︎ Approval required** — `$1,284.00` needs a named approver.
-5. Click **Approve spend**. The case resumes and resolves; the refund posts.
-6. Check the **Ledger** and **Cases → trail →** tabs to see the result and the full
-   protocol trace.
+2. (Optional) Pick an engine in the **orchestrator** dropdown — deterministic, LangGraph,
+   or Google ADK. The choice is saved to SQLite immediately.
+3. On **File a claim**, keep the pre-filled example and click **Submit claim**.
+4. The **Live case** panel streams the agents' work in real time (SSE) and shows which
+   **Orchestrator** resolved the case.
+5. The case stops at **✍︎ Approval required** — `$1,284.00` needs a named approver.
+6. Click **Approve spend**. The case resumes (on the same engine it started on) and
+   resolves; the refund posts.
+7. Check the **Ledger** and **Cases → trail →** tabs to see the result and the full
+   protocol trace, including the `orchestrator.selected` entry.
+
+Re-run with a different engine to confirm the outcome is identical — only the orchestration
+mechanics change.
 
 ---
 

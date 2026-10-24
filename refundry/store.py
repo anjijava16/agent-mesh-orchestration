@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS audit (
     detail      TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_audit_ctx ON audit(context_id);
+
+-- Operator preferences (e.g. the selected orchestrator engine). Survives a
+-- `make seed`, because it is configuration rather than case data. Swap SQLite
+-- for Postgres later and nothing above this line changes.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  REAL NOT NULL
+);
 """
 
 
@@ -249,3 +258,31 @@ def trail(context_id: str | None = None, limit: int = 500) -> list[dict]:
     else:
         rows = _exec("SELECT * FROM audit ORDER BY id LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
+
+
+# -- operator preferences --------------------------------------------------
+
+ORCHESTRATOR_KEY = "orchestrator"
+DEFAULT_ORCHESTRATOR = "deterministic"
+
+
+def get_setting(key: str, default: str | None = None) -> str | None:
+    row = _exec("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    _exec(
+        """INSERT INTO app_settings (key, value, updated_at) VALUES (?,?,?)
+           ON CONFLICT(key) DO UPDATE SET
+             value=excluded.value, updated_at=excluded.updated_at""",
+        (key, value, time.time()),
+    )
+
+
+def get_orchestrator() -> str:
+    return get_setting(ORCHESTRATOR_KEY, DEFAULT_ORCHESTRATOR) or DEFAULT_ORCHESTRATOR
+
+
+def set_orchestrator(value: str) -> None:
+    set_setting(ORCHESTRATOR_KEY, value)

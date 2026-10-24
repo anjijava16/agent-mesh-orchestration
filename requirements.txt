@@ -6,3 +6,10 @@ python-dotenv>=1.0
 
 # Optional. Without a TYPESAFE_API_KEY the local System One stand-in is used.
 # typesafe-sdk>=0.1
+
+# Optional orchestrator engines. The Arbiter ships with its own ~90-line
+# state-graph engine (the default, "deterministic · jev:local"). Install these
+# to also offer the LangGraph and Google ADK engines in the selector; without
+# them the app still runs and those options are shown as unavailable.
+langgraph>=0.2
+google-adk>=1.0

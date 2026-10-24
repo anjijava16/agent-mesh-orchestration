@@ -78,6 +78,37 @@ async function loadConfig() {
   } catch {}
 }
 
+// ---------------------------------------------------------------- orchestrator
+async function loadOrchestrator() {
+  const sel = $("#orchestrator");
+  try {
+    const { selected, options } = await api("/orchestrator");
+    sel.innerHTML = options.map((o) => {
+      const dis = o.available ? "" : " disabled";
+      const suffix = o.available ? "" : " (not installed)";
+      const picked = o.key === selected ? " selected" : "";
+      return `<option value="${o.key}"${dis}${picked}>${escapeHtml(o.label)}${suffix}</option>`;
+    }).join("");
+  } catch {
+    sel.innerHTML = `<option>unavailable</option>`;
+  }
+}
+
+$("#orchestrator").addEventListener("change", async (e) => {
+  const key = e.target.value;
+  try {
+    const res = await api("/orchestrator", {
+      method: "PUT",
+      body: JSON.stringify({ orchestrator: key }),
+    });
+    const label = (res.options.find((o) => o.key === res.selected) || {}).label || res.selected;
+    toast(`Orchestrator set to ${label} — saved to SQLite`);
+  } catch (err) {
+    toast("Could not set orchestrator: " + err.message, true);
+    loadOrchestrator();
+  }
+});
+
 // ---------------------------------------------------------------- file claim
 $("#claim-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -114,10 +145,12 @@ function renderCase(view) {
 
   const r = view.result || {};
   const amount = r.amount ?? view.approval_request?.amount;
+  const engine = (view.routing && view.routing.orchestrator) || null;
   const rows = [
     ["Case", view.case_id],
     ["Status", view.status || view.task_state],
     ["Claim type", view.claim_type || "—"],
+    ["Orchestrator", engine || "—"],
     ["Message", view.message || "—"],
   ];
   let html = rows.map(([k, v]) => `<div class="summary-row"><span class="k">${k}</span><span class="v">${escapeHtml(String(v))}</span></div>`).join("");
@@ -230,6 +263,7 @@ async function fetchCaseView(caseId) {
     claim_type: rec.claim_type,
     message: rec.message,
     result: rec.result,
+    routing: rec.routing,
     timeline: rec.timeline || [],
     awaiting_approval: rec.status === "input-required",
     approval_request: rec.approval_request,
@@ -382,5 +416,6 @@ function escapeHtml(s) {
 
 // ---------------------------------------------------------------- boot
 loadConfig();
+loadOrchestrator();
 refreshHealth();
 setInterval(refreshHealth, 8000);

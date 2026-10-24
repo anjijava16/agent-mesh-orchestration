@@ -46,7 +46,19 @@ body {
 .topbar h1 { margin: 0; font-size: 22px; letter-spacing: 0.3px; }
 .tagline { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
 
-.status-cluster { text-align: right; }
+.status-cluster { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.orch-select { display: flex; align-items: center; gap: 8px; }
+.orch-select label {
+  margin: 0; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+}
+.orch-select select {
+  width: auto; margin: 0; padding: 7px 30px 7px 12px;
+  background: var(--panel) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'><path d='M1 1l4 4 4-4' stroke='%238b98a7' stroke-width='1.5'/></svg>") no-repeat right 12px center;
+  border: 1px solid var(--accent); color: var(--text); border-radius: 999px;
+  font-size: 13px; cursor: pointer; appearance: none; -webkit-appearance: none;
+}
+.orch-select select:focus { outline: none; border-color: var(--accent-2); }
+.orch-select select option:disabled { color: var(--muted); }
 .pill {
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--panel); border: 1px solid var(--border);
